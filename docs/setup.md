@@ -37,3 +37,9 @@ python -m sync.main --days 30 --output sync-output
 The sync code writes compact JSON files matching `sample-data/`.
 It stores Garmin session tokens only in encrypted form at `.garmin-session.enc`.
 Use `--force-login` if Garmin rejects a restored session and you want to bypass the cache.
+
+To preview a GCS upload without contacting Google Cloud:
+
+```bash
+python -m sync.main --days 7 --output ./local-data --dry-run-upload
+```

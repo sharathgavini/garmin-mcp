@@ -82,3 +82,23 @@ def test_run_sync_removes_stale_activity_details(monkeypatch, tmp_path):
     sync_main.run_sync(days=1, output=tmp_path)
 
     assert not stale_file.exists()
+
+
+def test_run_sync_upload_failure_marks_status_failed(monkeypatch, tmp_path):
+    monkeypatch.setattr(sync_main, "login_or_restore", lambda **kwargs: FakeClient())
+    monkeypatch.setattr(sync_main, "_date_range", lambda days: [sync_main.date(2999, 1, 1)])
+
+    def fail_upload(*args, **kwargs):
+        raise RuntimeError("upload failed")
+
+    monkeypatch.setattr(sync_main, "upload_directory_to_gcs", fail_upload)
+
+    try:
+        sync_main.run_sync(days=1, output=tmp_path, upload_gcs=True, upload_bucket="bucket-name")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("upload failure should propagate")
+
+    status = json.loads((tmp_path / "latest_sync_status.json").read_text())
+    assert status["status"] == "failed"

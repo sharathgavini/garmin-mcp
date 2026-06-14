@@ -18,7 +18,7 @@ from .garmin_sync.normalizers import (
     normalize_sleep,
     normalize_stress,
 )
-from .garmin_sync.upload_gcs import upload_directory
+from .gcs_upload import upload_directory_to_gcs
 from .garmin_sync.write_json import write_json
 from .session_manager import DEFAULT_SESSION_FILE, login_or_restore, save_session
 
@@ -28,6 +28,9 @@ def run_sync(
     days: int,
     output: Path,
     upload_bucket: str | None = None,
+    upload_gcs: bool = False,
+    gcs_prefix: str = "latest",
+    dry_run_upload: bool = False,
     force_login: bool = False,
     session_file: Path = DEFAULT_SESSION_FILE,
 ) -> None:
@@ -60,8 +63,21 @@ def run_sync(
         _write_outputs(output, daily, sleep, hrv, stress, body_battery, activities, client, days_to_fetch, started_at)
         save_session(client, session_file)
 
-        if upload_bucket:
-            upload_directory(upload_bucket, output)
+        if upload_gcs or dry_run_upload:
+            bucket = upload_bucket or os.environ.get("GCS_BUCKET")
+            try:
+                upload_directory_to_gcs(output, bucket or "", gcs_prefix, dry_run=dry_run_upload)
+            except Exception:
+                write_json(
+                    output / "latest_sync_status.json",
+                    _sync_status(
+                        status="failed",
+                        started_at=started_at,
+                        completed_at=datetime.now(timezone.utc),
+                        activities=activities,
+                    ),
+                )
+                raise
     except Exception:
         write_json(
             output / "latest_sync_status.json",
@@ -203,6 +219,9 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--output", type=Path, default=Path("./output"))
     parser.add_argument("--upload-bucket", default=os.environ.get("GCS_BUCKET"))
+    parser.add_argument("--upload-gcs", action="store_true")
+    parser.add_argument("--gcs-prefix", default=os.environ.get("GCS_PREFIX", "latest"))
+    parser.add_argument("--dry-run-upload", action="store_true")
     parser.add_argument("--session-file", type=Path, default=DEFAULT_SESSION_FILE)
     parser.add_argument("--force-login", action="store_true")
     args = parser.parse_args()
@@ -210,6 +229,9 @@ def main() -> None:
         days=args.days,
         output=args.output,
         upload_bucket=args.upload_bucket,
+        upload_gcs=args.upload_gcs,
+        gcs_prefix=args.gcs_prefix,
+        dry_run_upload=args.dry_run_upload,
         force_login=args.force_login,
         session_file=args.session_file,
     )
