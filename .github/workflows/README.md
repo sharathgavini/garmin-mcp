@@ -7,4 +7,4 @@ This directory contains GitHub Actions workflow definitions.
 - Keep Garmin credentials and Google auth material in GitHub secrets.
 - Do not print secrets in logs.
 - Sync workflows should write normalized JSON, raw payloads where intended, manifests, and sync status.
-- Deployment workflows should not run before local and GCS validation pass.
+- Server deployment is manual to TrueNAS, so there is no GitHub Actions deployment workflow.

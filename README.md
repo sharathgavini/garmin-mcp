@@ -23,7 +23,7 @@ If you are new to this project, read these in order:
 - `sync/` - Python Garmin sync, backfill, session encryption, normalizers, raw payload and stream storage, and GCS upload helpers.
 - `server/` - TypeScript MCP server, OAuth routes, data readers, tool handlers, workout analysis, and Dockerfile.
 - `docker/` - self-hosted container entrypoint and scheduled sync scripts.
-- `.github/workflows/` - GitHub Actions sync/deploy workflows.
+- `.github/workflows/` - GitHub Actions Garmin sync workflow.
 - `docs/` - setup, design, architecture, tool catalog, deployment, OAuth, troubleshooting, and agent-facing notes.
 - `sample-data/` - redacted JSON fixtures for local development and MCP tests.
 - `tests/` - Python tests for sync, backfill, crypto, GCS upload, normalizers, and stream extraction.
