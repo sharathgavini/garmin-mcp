@@ -21,6 +21,9 @@ def main() -> None:
     parser.add_argument("--upload-gcs", action="store_true")
     parser.add_argument("--gcs-prefix", default=os.environ.get("GCS_PREFIX", "latest"))
     parser.add_argument("--dry-run-upload", action="store_true")
+    parser.add_argument("--include-raw", default="true")
+    parser.add_argument("--activity-details", default="true")
+    parser.add_argument("--activity-streams", default="true")
     parser.add_argument("--force-login", action="store_true")
     parser.add_argument("--session-file", type=Path, default=Path(os.environ.get("GARMIN_SESSION_FILE", ".garmin-session.enc")))
     args = parser.parse_args()
@@ -31,6 +34,9 @@ def main() -> None:
         upload_gcs=args.upload_gcs,
         gcs_prefix=args.gcs_prefix,
         dry_run_upload=args.dry_run_upload,
+        include_raw=args.include_raw.lower() in {"1", "true", "yes", "on"},
+        activity_details=args.activity_details.lower() in {"1", "true", "yes", "on"},
+        activity_streams=args.activity_streams.lower() in {"1", "true", "yes", "on"},
         force_login=args.force_login,
         session_file=args.session_file,
     )

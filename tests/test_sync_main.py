@@ -50,6 +50,33 @@ class FakeClient:
             "maxHR": 170,
         }
 
+    def get_activity_details(self, activity_id, maxchart=2000, maxpoly=4000):
+        return {
+            "activityId": activity_id,
+            "activityDetailMetrics": [
+                {"timerDuration": 0, "heartRate": 100, "cadence": 80, "speed": 3.2, "distance": 0},
+                {"timerDuration": 1, "heartRate": 101, "cadence": 81, "speed": 3.3, "distance": 3.2},
+            ],
+        }
+
+    def get_activity_splits(self, activity_id):
+        return [{"lap": 1, "distance": 1000}]
+
+    def get_activity_typed_splits(self, activity_id):
+        return []
+
+    def get_activity_split_summaries(self, activity_id):
+        return []
+
+    def get_activity_hr_in_timezones(self, activity_id):
+        return {}
+
+    def get_activity_gear(self, activity_id):
+        return {}
+
+    def get_activity_weather(self, activity_id):
+        return {}
+
 
 def test_run_sync_writes_normalized_json(monkeypatch, tmp_path):
     monkeypatch.setattr(sync_main, "login_or_restore", lambda **kwargs: FakeClient())
@@ -69,6 +96,13 @@ def test_run_sync_writes_normalized_json(monkeypatch, tmp_path):
     detail = json.loads((tmp_path / "activity_details" / "123.json").read_text())
     assert detail["streams_omitted"] is True
     assert "activityType" not in detail
+
+    stream = json.loads((tmp_path / "activity_streams" / "123.json").read_text())
+    assert stream["sample_count"] == 2
+    assert "heart_rate" in stream["fields"]
+    assert (tmp_path / "raw" / "daily" / "daily.json").exists()
+    assert (tmp_path / "raw" / "activity_details" / "123.json").exists()
+    assert (tmp_path / "raw" / "activity_streams" / "123.json").exists()
 
 
 def test_run_sync_removes_stale_activity_details(monkeypatch, tmp_path):

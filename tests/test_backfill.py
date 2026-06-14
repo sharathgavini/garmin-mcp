@@ -50,6 +50,33 @@ class FakeBackfillClient:
             "duration": 1800,
         }
 
+    def get_activity_details(self, activity_id, maxchart=2000, maxpoly=4000):
+        return {
+            "activityId": activity_id,
+            "activityDetailMetrics": [
+                {"timerDuration": 0, "heartRate": 100, "cadence": 80, "speed": 3.2, "distance": 0},
+                {"timerDuration": 1, "heartRate": 101, "cadence": 81, "speed": 3.3, "distance": 3.2},
+            ],
+        }
+
+    def get_activity_splits(self, activity_id):
+        return [{"lap": 1, "distance": 1000}]
+
+    def get_activity_typed_splits(self, activity_id):
+        return []
+
+    def get_activity_split_summaries(self, activity_id):
+        return []
+
+    def get_activity_hr_in_timezones(self, activity_id):
+        return {}
+
+    def get_activity_gear(self, activity_id):
+        return {}
+
+    def get_activity_weather(self, activity_id):
+        return {}
+
 
 def test_chunk_ranges_are_inclusive():
     assert backfill.chunk_ranges(date(2026, 6, 1), date(2026, 6, 8), 3) == [
@@ -84,6 +111,17 @@ def test_existing_activity_details_are_not_downloaded(tmp_path):
     (details / "activity-2026-06-01.json").write_text("{}", encoding="utf-8")
 
     backfill.write_activity_details(tmp_path, client, [{"id": "activity-2026-06-01", "date": "2026-06-01"}])
+
+    assert client.detail_calls == []
+
+
+def test_existing_activity_streams_are_not_downloaded(tmp_path):
+    client = FakeBackfillClient()
+    streams = tmp_path / "activity_streams"
+    streams.mkdir()
+    (streams / "activity-2026-06-01.json").write_text("{}", encoding="utf-8")
+
+    backfill.write_activity_streams(tmp_path, client, [{"id": "activity-2026-06-01", "date": "2026-06-01"}])
 
     assert client.detail_calls == []
 
@@ -134,6 +172,7 @@ def test_run_backfill_writes_partitions_and_manifest(tmp_path):
 
     assert (tmp_path / "daily" / "year=2026" / "month=06" / "daily.json").exists()
     assert (tmp_path / "activity_details" / "activity-2026-06-01.json").exists()
+    assert (tmp_path / "activity_streams" / "activity-2026-06-01.json").exists()
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["backfill_status"] == "success"
     assert manifest["dataset_counts"]["daily"] == 2
@@ -153,6 +192,7 @@ def test_include_raw_writes_raw_partition(tmp_path):
     )
 
     assert (tmp_path / "raw" / "daily" / "year=2026" / "month=06" / "daily.json").exists()
+    assert (tmp_path / "raw" / "activity_streams" / "activity-2026-06-01.json").exists()
 
 
 def test_archive_output_writes_raw_to_sibling_raw_dir(tmp_path):
@@ -170,3 +210,9 @@ def test_archive_output_writes_raw_to_sibling_raw_dir(tmp_path):
     )
 
     assert (tmp_path / "raw" / "daily" / "year=2026" / "month=06" / "daily.json").exists()
+
+
+def test_backfill_bool_flags_accept_true_false(tmp_path):
+    parser_value = backfill.bool_arg("true")
+    assert parser_value is True
+    assert backfill.bool_arg("false") is False

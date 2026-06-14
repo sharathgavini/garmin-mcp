@@ -11,4 +11,7 @@ trap 'rmdir "$LOCK_DIR"' EXIT
 python -m sync.main \
   --days "${SYNC_DAYS:-30}" \
   --output "${GARMIN_DATA_DIR:-/app/data/latest}" \
-  --session-file "${GARMIN_SESSION_FILE:-/app/secrets/.garmin-session.enc}"
+  --session-file "${GARMIN_SESSION_FILE:-/app/secrets/.garmin-session.enc}" \
+  --include-raw true \
+  --activity-details true \
+  --activity-streams true

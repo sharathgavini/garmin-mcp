@@ -1,0 +1,28 @@
+{
+  "activity_id": "sample-run-1",
+  "source": "garmin-connect",
+  "generated_at": "2026-06-13T00:00:00Z",
+  "sync_version": "v1",
+  "schema_version": "activity_streams_v1",
+  "sample_count": 4,
+  "fields": ["offset_seconds", "heart_rate", "cadence", "speed_mps", "altitude_m", "distance_m"],
+  "samples": [
+    { "offset_seconds": 0, "heart_rate": 112, "cadence": 152, "speed_mps": 2.4, "altitude_m": 410, "distance_m": 0 },
+    { "offset_seconds": 60, "heart_rate": 140, "cadence": 164, "speed_mps": 3.0, "altitude_m": 412, "distance_m": 180 },
+    { "offset_seconds": 120, "heart_rate": 155, "cadence": 168, "speed_mps": 3.1, "altitude_m": 413, "distance_m": 366 },
+    { "offset_seconds": 180, "heart_rate": 162, "cadence": 166, "speed_mps": 2.8, "altitude_m": 412, "distance_m": 534 }
+  ],
+  "laps": [],
+  "splits": [],
+  "metadata": {
+    "has_power": false,
+    "has_gps": false,
+    "has_cadence": true,
+    "has_heart_rate": true
+  },
+  "availability": {
+    "available_fields": ["offset_seconds", "heart_rate", "cadence", "speed_mps", "altitude_m", "distance_m"],
+    "missing_fields": ["power_watts"],
+    "notes": ["power_watts is missing because Garmin did not provide power samples for this activity"]
+  }
+}

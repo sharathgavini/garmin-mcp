@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from dotenv import load_dotenv
 
+from .activity_streams import fetch_activity_payloads, normalize_activity_stream
 from .coach_context import generate_coach_context
 from .garmin_sync.normalizers import (
     normalize_activity,
@@ -31,6 +32,9 @@ def run_sync(
     upload_gcs: bool = False,
     gcs_prefix: str = "latest",
     dry_run_upload: bool = False,
+    include_raw: bool = True,
+    activity_details: bool = True,
+    activity_streams: bool = True,
     force_login: bool = False,
     session_file: Path = DEFAULT_SESSION_FILE,
 ) -> None:
@@ -44,23 +48,56 @@ def run_sync(
         hrv: list[dict[str, Any]] = []
         stress: list[dict[str, Any]] = []
         body_battery: list[dict[str, Any]] = []
+        raw_payloads: dict[str, list[Any]] = {
+            "daily": [],
+            "sleep": [],
+            "hrv": [],
+            "stress": [],
+            "body_battery": [],
+            "activities": [],
+        }
 
         for day in days_to_fetch:
             day_text = day.isoformat()
             daily_raw = _safe_dict(client.get_stats, day_text)
             readiness_raw = _safe_dict(getattr(client, "get_training_readiness", None), day_text)
+            sleep_raw = _safe_dict(client.get_sleep_data, day_text)
+            hrv_raw = _safe_dict(client.get_hrv_data, day_text)
+            stress_raw = _safe_dict(client.get_stress_data, day_text)
+            body_battery_raw = _safe_list(client.get_body_battery, day_text, day_text)
+            raw_payloads["daily"].append({"date": day_text, "payload": daily_raw, "training_readiness": readiness_raw})
+            raw_payloads["sleep"].append({"date": day_text, "payload": sleep_raw})
+            raw_payloads["hrv"].append({"date": day_text, "payload": hrv_raw})
+            raw_payloads["stress"].append({"date": day_text, "payload": stress_raw})
+            raw_payloads["body_battery"].append({"date": day_text, "payload": body_battery_raw})
             daily.append(normalize_daily(daily_raw | {"trainingReadiness": readiness_raw}, day))
-            sleep.append(normalize_sleep(_safe_dict(client.get_sleep_data, day_text), day))
-            hrv.append(normalize_hrv(_safe_dict(client.get_hrv_data, day_text), day))
-            stress.append(normalize_stress(_safe_dict(client.get_stress_data, day_text), day))
-            body_battery.append(normalize_body_battery(_safe_list(client.get_body_battery, day_text, day_text), day))
+            sleep.append(normalize_sleep(sleep_raw, day))
+            hrv.append(normalize_hrv(hrv_raw, day))
+            stress.append(normalize_stress(stress_raw, day))
+            body_battery.append(normalize_body_battery(body_battery_raw, day))
 
         activities_raw = _safe_list(client.get_activities, 0, max(100, days * 4))
+        raw_payloads["activities"] = activities_raw
         activities = [normalize_activity(item) for item in activities_raw if isinstance(item, dict)]
         activities = [item for item in activities if item.get("id") and item.get("date", "") >= days_to_fetch[0].isoformat()]
         activities.sort(key=lambda item: str(item.get("date", "")), reverse=True)
 
-        _write_outputs(output, daily, sleep, hrv, stress, body_battery, activities, client, days_to_fetch, started_at)
+        _write_outputs(
+            output,
+            daily,
+            sleep,
+            hrv,
+            stress,
+            body_battery,
+            activities,
+            client,
+            days_to_fetch,
+            started_at,
+            include_raw=include_raw,
+            activity_details=activity_details,
+            activity_streams=activity_streams,
+            raw_payloads=raw_payloads,
+        )
         save_session(client, session_file)
 
         if upload_gcs or dry_run_upload:
@@ -102,6 +139,10 @@ def _write_outputs(
     client: Any,
     days_to_fetch: list[date],
     started_at: datetime,
+    include_raw: bool,
+    activity_details: bool,
+    activity_streams: bool,
+    raw_payloads: dict[str, list[Any]] | None = None,
 ) -> None:
     write_json(output / "daily.json", daily)
     write_json(output / "sleep.json", sleep)
@@ -111,13 +152,31 @@ def _write_outputs(
     write_json(output / "activities.json", activities)
 
     details_dir = output / "activity_details"
+    streams_dir = output / "activity_streams"
     _clear_json_files(details_dir)
+    _clear_json_files(streams_dir)
     for activity in activities[:30]:
         activity_id = str(activity["id"])
-        detail_raw = _safe_dict(getattr(client, "get_activity", None), activity_id)
-        if not detail_raw:
-            detail_raw = _safe_dict(getattr(client, "get_activity_details", None), activity_id)
-        write_json(details_dir / f"{activity_id}.json", normalize_activity_detail(detail_raw or activity, fallback=activity))
+        payloads = fetch_activity_payloads(client, activity_id)
+        detail_raw = payloads.get("activity") if isinstance(payloads.get("activity"), dict) else {}
+        if not detail_raw and isinstance(payloads.get("activity_details"), dict):
+            detail_raw = payloads["activity_details"]
+        if activity_details:
+            write_json(details_dir / f"{activity_id}.json", normalize_activity_detail(detail_raw or activity, fallback=activity))
+        if activity_streams:
+            write_json(streams_dir / f"{activity_id}.json", normalize_activity_stream(activity_id, payloads))
+        if include_raw:
+            write_json(output / "raw" / "activity_details" / f"{activity_id}.json", payloads)
+            write_json(output / "raw" / "activity_streams" / f"{activity_id}.json", payloads)
+
+    if include_raw:
+        raw_payloads = raw_payloads or {}
+        write_raw_latest(output, "daily", raw_payloads.get("daily", []))
+        write_raw_latest(output, "sleep", raw_payloads.get("sleep", []))
+        write_raw_latest(output, "hrv", raw_payloads.get("hrv", []))
+        write_raw_latest(output, "stress", raw_payloads.get("stress", []))
+        write_raw_latest(output, "body_battery", raw_payloads.get("body_battery", []))
+        write_raw_latest(output, "activities", raw_payloads.get("activities", []))
 
     write_json(
         output / "coach_context_14d.json",
@@ -222,6 +281,9 @@ def main() -> None:
     parser.add_argument("--upload-gcs", action="store_true")
     parser.add_argument("--gcs-prefix", default=os.environ.get("GCS_PREFIX", "latest"))
     parser.add_argument("--dry-run-upload", action="store_true")
+    parser.add_argument("--include-raw", type=bool_arg, default=True)
+    parser.add_argument("--activity-details", type=bool_arg, default=True)
+    parser.add_argument("--activity-streams", type=bool_arg, default=True)
     parser.add_argument("--session-file", type=Path, default=Path(os.environ.get("GARMIN_SESSION_FILE", str(DEFAULT_SESSION_FILE))))
     parser.add_argument("--force-login", action="store_true")
     args = parser.parse_args()
@@ -232,9 +294,27 @@ def main() -> None:
         upload_gcs=args.upload_gcs,
         gcs_prefix=args.gcs_prefix,
         dry_run_upload=args.dry_run_upload,
+        include_raw=args.include_raw,
+        activity_details=args.activity_details,
+        activity_streams=args.activity_streams,
         force_login=args.force_login,
         session_file=args.session_file,
     )
+
+
+def write_raw_latest(output: Path, dataset: str, payload: Any) -> None:
+    write_json(output / "raw" / dataset / f"{dataset}.json", payload)
+
+
+def bool_arg(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    lowered = value.lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("Use true or false.")
 
 
 if __name__ == "__main__":

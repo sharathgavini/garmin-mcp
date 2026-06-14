@@ -1,0 +1,30 @@
+{
+  "activity_id": "sample-ride-1",
+  "source": "garmin-connect",
+  "generated_at": "2026-06-13T00:00:00Z",
+  "sync_version": "v1",
+  "schema_version": "activity_streams_v1",
+  "sample_count": 6,
+  "fields": ["offset_seconds", "heart_rate", "cadence", "speed_mps", "power_watts", "altitude_m", "distance_m"],
+  "samples": [
+    { "offset_seconds": 0, "heart_rate": 92, "cadence": 0, "speed_mps": 0, "power_watts": 0, "altitude_m": 421.2, "distance_m": 0 },
+    { "offset_seconds": 60, "heart_rate": 128, "cadence": 78, "speed_mps": 6.1, "power_watts": 150, "altitude_m": 424.1, "distance_m": 366 },
+    { "offset_seconds": 120, "heart_rate": 139, "cadence": 84, "speed_mps": 7.2, "power_watts": 184, "altitude_m": 426.0, "distance_m": 798 },
+    { "offset_seconds": 180, "heart_rate": 151, "cadence": 86, "speed_mps": 7.5, "power_watts": 202, "altitude_m": 431.0, "distance_m": 1248 },
+    { "offset_seconds": 240, "heart_rate": 158, "cadence": 88, "speed_mps": 7.1, "power_watts": 195, "altitude_m": 433.0, "distance_m": 1674 },
+    { "offset_seconds": 300, "heart_rate": 149, "cadence": 81, "speed_mps": 0.2, "power_watts": 20, "altitude_m": 433.1, "distance_m": 1686 }
+  ],
+  "laps": [{ "lap": 1, "distance_meters": 5000, "duration_seconds": 900, "avg_hr": 136 }],
+  "splits": [],
+  "metadata": {
+    "has_power": true,
+    "has_gps": false,
+    "has_cadence": true,
+    "has_heart_rate": true
+  },
+  "availability": {
+    "available_fields": ["offset_seconds", "heart_rate", "cadence", "speed_mps", "power_watts", "altitude_m", "distance_m"],
+    "missing_fields": ["position_lat", "position_long"],
+    "notes": ["GPS samples were not present in this fixture."]
+  }
+}

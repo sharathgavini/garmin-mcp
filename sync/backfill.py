@@ -9,6 +9,7 @@ from typing import Any, Callable, Iterable
 
 from dotenv import load_dotenv
 
+from .activity_streams import fetch_activity_payloads, normalize_activity_stream
 from .garmin_sync.normalizers import (
     normalize_activity,
     normalize_activity_detail,
@@ -33,6 +34,7 @@ def run_backfill(
     skip_raw: bool = True,
     include_raw: bool = False,
     activity_details: bool = True,
+    activity_streams: bool = True,
     session_file: Path = DEFAULT_SESSION_FILE,
     client: Any | None = None,
 ) -> None:
@@ -70,10 +72,14 @@ def run_backfill(
             write_partitioned_rows(output, "body_battery", chunk_data["body_battery"])
             write_partitioned_rows(output, "activities", chunk_data["activities"])
             if should_include_raw:
-                write_partitioned_rows(raw_output_dir(output), "daily", chunk_data["raw_daily"])
+                raw_dir = raw_output_dir(output)
+                for dataset in ["daily", "sleep", "hrv", "stress", "body_battery", "activities"]:
+                    write_partitioned_rows(raw_dir, dataset, chunk_data[f"raw_{dataset}"])
 
             if activity_details:
-                write_activity_details(output, garmin, chunk_data["activities"])
+                write_activity_details(output, garmin, chunk_data["activities"], force=force, include_raw=should_include_raw)
+            if activity_streams:
+                write_activity_streams(output, garmin, chunk_data["activities"], force=force, include_raw=should_include_raw)
 
             write_checkpoint(
                 checkpoint_path,
@@ -124,24 +130,41 @@ def fetch_chunk(client: Any, start: date, end: date, *, include_raw: bool = Fals
     hrv = []
     stress = []
     body_battery = []
-    raw_daily = []
+    raw_payloads: dict[str, list[dict[str, Any]]] = {
+        "daily": [],
+        "sleep": [],
+        "hrv": [],
+        "stress": [],
+        "body_battery": [],
+        "activities": [],
+    }
 
     for day in each_day(start, end):
         day_text = day.isoformat()
         daily_raw = safe_dict(getattr(client, "get_stats", None), day_text)
         readiness_raw = safe_dict(getattr(client, "get_training_readiness", None), day_text)
+        sleep_raw = safe_dict(getattr(client, "get_sleep_data", None), day_text)
+        hrv_raw = safe_dict(getattr(client, "get_hrv_data", None), day_text)
+        stress_raw = safe_dict(getattr(client, "get_stress_data", None), day_text)
+        body_battery_raw = safe_list(getattr(client, "get_body_battery", None), day_text, day_text)
         daily.append(normalize_daily(daily_raw | {"trainingReadiness": readiness_raw}, day))
-        sleep.append(normalize_sleep(safe_dict(getattr(client, "get_sleep_data", None), day_text), day))
-        hrv.append(normalize_hrv(safe_dict(getattr(client, "get_hrv_data", None), day_text), day))
-        stress.append(normalize_stress(safe_dict(getattr(client, "get_stress_data", None), day_text), day))
-        body_battery.append(normalize_body_battery(safe_list(getattr(client, "get_body_battery", None), day_text, day_text), day))
+        sleep.append(normalize_sleep(sleep_raw, day))
+        hrv.append(normalize_hrv(hrv_raw, day))
+        stress.append(normalize_stress(stress_raw, day))
+        body_battery.append(normalize_body_battery(body_battery_raw, day))
         if include_raw:
-            raw_daily.append({"date": day_text, "payload": daily_raw})
+            raw_payloads["daily"].append({"date": day_text, "payload": daily_raw, "training_readiness": readiness_raw})
+            raw_payloads["sleep"].append({"date": day_text, "payload": sleep_raw})
+            raw_payloads["hrv"].append({"date": day_text, "payload": hrv_raw})
+            raw_payloads["stress"].append({"date": day_text, "payload": stress_raw})
+            raw_payloads["body_battery"].append({"date": day_text, "payload": body_battery_raw})
 
     activities_raw = fetch_activities(client, start, end)
     activities = [normalize_activity(item) for item in activities_raw if isinstance(item, dict)]
     activities = [item for item in activities if item.get("id") and start.isoformat() <= str(item.get("date", "")) <= end.isoformat()]
     activities.sort(key=lambda item: str(item.get("date", "")))
+    if include_raw:
+        raw_payloads["activities"] = [{"date": str(normalize_activity(item).get("date", "")), "payload": item} for item in activities_raw if isinstance(item, dict)]
 
     return {
         "daily": daily,
@@ -150,7 +173,12 @@ def fetch_chunk(client: Any, start: date, end: date, *, include_raw: bool = Fals
         "stress": stress,
         "body_battery": body_battery,
         "activities": activities,
-        "raw_daily": raw_daily,
+        "raw_daily": raw_payloads["daily"],
+        "raw_sleep": raw_payloads["sleep"],
+        "raw_hrv": raw_payloads["hrv"],
+        "raw_stress": raw_payloads["stress"],
+        "raw_body_battery": raw_payloads["body_battery"],
+        "raw_activities": raw_payloads["activities"],
     }
 
 
@@ -176,7 +204,7 @@ def write_partitioned_rows(output: Path, dataset: str, rows: list[dict[str, Any]
         write_json(path, merge_rows_by_key(existing, month_rows, key="date" if dataset != "activities" else "id"))
 
 
-def write_activity_details(output: Path, client: Any, activities: list[dict[str, Any]]) -> None:
+def write_activity_details(output: Path, client: Any, activities: list[dict[str, Any]], *, force: bool = False, include_raw: bool = False) -> None:
     details_dir = output / "activity_details"
     details_dir.mkdir(parents=True, exist_ok=True)
     for activity in activities:
@@ -184,12 +212,31 @@ def write_activity_details(output: Path, client: Any, activities: list[dict[str,
         if not activity_id:
             continue
         path = details_dir / f"{activity_id}.json"
-        if path.exists():
+        if path.exists() and not force:
             continue
-        detail_raw = safe_dict(getattr(client, "get_activity", None), activity_id)
-        if not detail_raw:
-            detail_raw = safe_dict(getattr(client, "get_activity_details", None), activity_id)
+        payloads = fetch_activity_payloads(client, activity_id)
+        detail_raw = payloads.get("activity") if isinstance(payloads.get("activity"), dict) else {}
+        if not detail_raw and isinstance(payloads.get("activity_details"), dict):
+            detail_raw = payloads["activity_details"]
         write_json(path, normalize_activity_detail(detail_raw or activity, fallback=activity))
+        if include_raw:
+            write_json(raw_output_dir(output) / "activity_details" / f"{activity_id}.json", payloads)
+
+
+def write_activity_streams(output: Path, client: Any, activities: list[dict[str, Any]], *, force: bool = False, include_raw: bool = False) -> None:
+    streams_dir = output / "activity_streams"
+    streams_dir.mkdir(parents=True, exist_ok=True)
+    for activity in activities:
+        activity_id = str(activity.get("id", ""))
+        if not activity_id:
+            continue
+        path = streams_dir / f"{activity_id}.json"
+        if path.exists() and not force:
+            continue
+        payloads = fetch_activity_payloads(client, activity_id)
+        write_json(path, normalize_activity_stream(activity_id, payloads))
+        if include_raw:
+            write_json(raw_output_dir(output) / "activity_streams" / f"{activity_id}.json", payloads)
 
 
 def generate_archive_manifest(output: Path, start: date, end: date) -> dict[str, Any]:
@@ -341,9 +388,11 @@ def main() -> None:
     parser.add_argument("--chunk-days", type=int, default=7)
     parser.add_argument("--sleep-seconds", type=float, default=2)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--skip-raw", type=bool_arg, default=True)
-    parser.add_argument("--include-raw", action="store_true")
+    parser.add_argument("--include-raw", type=bool_arg, default=False)
     parser.add_argument("--activity-details", type=bool_arg, default=True)
+    parser.add_argument("--activity-streams", type=bool_arg, default=True)
     parser.add_argument("--session-file", type=Path, default=Path(DEFAULT_SESSION_FILE))
     args = parser.parse_args()
     run_backfill(
@@ -356,6 +405,7 @@ def main() -> None:
         skip_raw=args.skip_raw,
         include_raw=args.include_raw,
         activity_details=args.activity_details,
+        activity_streams=args.activity_streams,
         session_file=args.session_file,
     )
 

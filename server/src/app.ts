@@ -41,11 +41,21 @@ export function createApp(
     const toolDescriptions: Record<ToolName, string> = {
       get_today_summary: "Return the daily Garmin summary for one date.",
       get_range_summary: "Return compact sleep, HRV, stress, body battery, activity, and recovery trends for a date range.",
-      get_recent_activities: "Return recent activity summaries, capped at 30 days.",
-      get_activity_detail: "Return one detailed activity summary without second-by-second streams.",
+      get_recent_activities: "Return recent Garmin activity summaries. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
+      get_activity_detail: "Return one detailed Garmin activity summary. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
       get_coach_context: "Return compact Garmin context optimized for LLM coaching.",
-      get_sync_status: "Return the latest Garmin sync status written by the sync job.",
-      get_latest_activity: "Return the latest synced activity detail.",
+      get_sync_status: "Return the latest Garmin sync status written by the sync job, including running sync_now lock state when present.",
+      get_latest_activity: "Return the latest synced Garmin activity detail. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
+      sync_now: "Start an authenticated background Garmin sync that stores normalized data, raw payloads, and activity streams.",
+      get_latest_workout: "Return the latest matching Garmin workout summary with stream availability. For full Garmin streams, call get_latest_workout_streams or get_activity_streams.",
+      get_latest_workout_summary: "Return analysis-ready summary fields for the latest matching Garmin workout, including stream availability.",
+      get_latest_workout_streams: "Returns full Garmin time-series streams for deep workout analysis. Use this instead of external activity sources when detailed HR/cadence/speed/power/elevation data is needed.",
+      get_activity_streams: "Return full Garmin time-series streams for a specific activity from latest or archive storage, with optional field filtering or explicit downsampling.",
+      analyze_activity: "Return structured Garmin workout analysis using summary data plus full streams when available, including HR drift, cadence/speed consistency, intensity distribution, laps, and raw stream references.",
+      analyze_latest_workout: "Find the latest matching Garmin workout and return structured stream-derived analysis.",
+      get_latest_ride: "Return the newest Garmin cycling activity, not the newest activity overall, with stream availability.",
+      get_latest_ride_summary: "Return summary fields for the newest Garmin cycling activity with stream availability and ride stream hint.",
+      get_latest_ride_streams: "Returns full Garmin ride streams for deep cycling analysis including HR, cadence, speed, power if available, elevation, distance, and GPS if available. Use this instead of external services for detailed ride analysis.",
       health_check: "Return server status, latest data timestamp, and available date range."
     };
 

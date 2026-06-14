@@ -17,5 +17,17 @@
     "duration_seconds": 2820,
     "avg_hr": 98,
     "calories": 205
+  },
+  {
+    "id": "sample-ride-1",
+    "type": "road biking",
+    "date": "2026-06-11",
+    "distance_meters": 24500,
+    "duration_seconds": 4200,
+    "avg_hr": 142,
+    "max_hr": 169,
+    "avg_cadence": 82,
+    "calories": 780,
+    "training_effect": 3.4
   }
 ]

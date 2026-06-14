@@ -127,7 +127,12 @@ curl https://garmin.sharathgavini.com/.well-known/oauth-authorization-server
 Run a manual sync:
 
 ```bash
-docker exec garmin-mcp python -m sync.main --days 7 --output /app/data/latest
+docker exec garmin-mcp python -m sync.main \
+  --days 30 \
+  --output /app/data/latest \
+  --include-raw true \
+  --activity-details true \
+  --activity-streams true
 ```
 
 The manual command works because the container sets `GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc`.
@@ -150,7 +155,10 @@ docker exec garmin-mcp python -m sync.backfill \
   --end-date 2026-06-14 \
   --output /app/data/archive \
   --chunk-days 7 \
-  --sleep-seconds 2
+  --sleep-seconds 2 \
+  --include-raw true \
+  --activity-details true \
+  --activity-streams true
 ```
 
 Resume an interrupted backfill:
@@ -159,10 +167,34 @@ Resume an interrupted backfill:
 docker exec garmin-mcp python -m sync.backfill \
   --start-date 2020-01-01 \
   --end-date 2026-06-14 \
-  --output /app/data/archive
+  --output /app/data/archive \
+  --include-raw true \
+  --activity-details true \
+  --activity-streams true
 ```
 
-Use `--force` to ignore `backfill_checkpoint.json` and start from `--start-date` again. Activity details are fetched only when `/app/data/archive/activity_details/{activity_id}.json` does not already exist.
+Use `--force` to ignore `backfill_checkpoint.json` and start from `--start-date` again. Activity details and streams are fetched only when the corresponding `/app/data/archive/activity_details/{activity_id}.json` or `/app/data/archive/activity_streams/{activity_id}.json` file does not already exist.
+
+Detached full historical backfill:
+
+```bash
+nohup docker exec garmin-mcp python -m sync.backfill \
+  --start-date 2025-10-01 \
+  --end-date 2026-06-14 \
+  --output /app/data/archive \
+  --chunk-days 7 \
+  --sleep-seconds 2 \
+  --include-raw true \
+  --activity-details true \
+  --activity-streams true \
+  > /mnt/scg_pool_1/apps/garmin-mcp/data/exports/backfill-full.log 2>&1 &
+```
+
+If a sync lock is stale after checking logs:
+
+```bash
+rm /mnt/scg_pool_1/apps/garmin-mcp/data/latest/sync.lock
+```
 
 Archive layout:
 
@@ -176,7 +208,46 @@ Archive layout:
 ├── stress/year=2026/month=06/stress.json
 ├── body_battery/year=2026/month=06/body_battery.json
 ├── activities/year=2026/month=06/activities.json
-└── activity_details/{activity_id}.json
+├── activity_details/{activity_id}.json
+├── activity_streams/{activity_id}.json
+└── raw/
+```
+
+## Activity Streams and Analysis
+
+Daily sync and backfill store normalized activity details plus full Garmin stream files when Garmin provides samples:
+
+- heart rate
+- cadence
+- speed
+- power when available
+- elevation
+- distance progression
+- GPS points when available
+- laps and splits
+
+Use the MCP tools:
+
+- `get_latest_workout`
+- `get_latest_workout_summary`
+- `get_latest_workout_streams`
+- `get_activity_streams`
+- `analyze_activity`
+- `analyze_latest_workout`
+- `get_latest_ride`
+- `get_latest_ride_summary`
+- `get_latest_ride_streams`
+- `sync_now`
+
+Example prompts:
+
+```text
+Use Garmin MCP and get my latest workout summary.
+Use Garmin MCP and get my latest ride streams.
+Use Garmin MCP and analyze my latest ride using full Garmin HR, cadence, speed, power if available, elevation, and distance streams. Do not use Strava.
+Use Garmin MCP and analyze my latest badminton session.
+Use Garmin MCP and analyze my latest gym workout.
+Use Garmin MCP, sync now with activity streams, then analyze my latest workout.
 ```
 
 ## TrueNAS Notes
@@ -234,24 +305,19 @@ The container should not upload or expose:
 - `.env`
 - `.garmin-session.enc`
 - logs
-- raw Garmin payloads
 - Garmin credentials
 
-Only normalized JSON files are written under `/app/data`. The encrypted session file stays under `/app/secrets`.
+Raw Garmin payloads are stored locally under `/app/data/latest/raw` and `/app/data/archive/raw` for self-hosted retention, but they should not be exposed publicly or copied into logs. The encrypted session file stays under `/app/secrets`.
 
 Do not expose a public unauthenticated sync endpoint.
 
-## Future `sync_now` Plan
+## `sync_now`
 
 Do not add unauthenticated sync.
 
-For self-hosting, a future `sync_now` should use one of these protected patterns:
+The MCP server exposes `sync_now` only through the authenticated `/mcp` channel. It creates `/app/data/latest/sync.lock`, starts `python -m sync.main` in the background, and writes running state to `/app/data/latest/latest_sync_status.json`. Poll `get_sync_status` after calling it.
 
-- MCP tool `sync_now` requiring the same bearer-authenticated `/mcp` channel, with server-side rate limiting and a single-process lock.
-- A local-only admin endpoint bound to the Docker network, protected by a separate admin token.
-- A queue/file signal consumed by the scheduled sync process.
-
-The existing `latest_sync_status.json`, `get_sync_status`, and `get_latest_activity` tools are already the polling/read side of that future flow.
+The existing bearer/OAuth protections remain required.
 
 ## OAuth Remote MCP Auth
 

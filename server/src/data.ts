@@ -44,6 +44,69 @@ export class LocalDataReader implements GarminDataReader {
       throw error;
     }
   }
+
+  async readActivityStream(activityId: string, source: "latest" | "archive" | "auto" = "auto"): Promise<JsonObject | null> {
+    const candidates =
+      source === "latest"
+        ? [path.join(this.baseDir, "activity_streams", `${activityId}.json`)]
+        : source === "archive"
+          ? [path.join(this.archiveDir(), "activity_streams", `${activityId}.json`)]
+          : [
+              path.join(this.baseDir, "activity_streams", `${activityId}.json`),
+              path.join(this.archiveDir(), "activity_streams", `${activityId}.json`)
+            ];
+
+    for (const fullPath of candidates) {
+      try {
+        const raw = await fs.readFile(fullPath, "utf8");
+        return JSON.parse(raw) as JsonObject;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+    return null;
+  }
+
+  async readArchiveActivities(): Promise<JsonObject[]> {
+    const archive = this.archiveDir();
+    const rows: JsonObject[] = [];
+    try {
+      const years = await fs.readdir(path.join(archive, "activities"));
+      for (const year of years) {
+        if (!year.startsWith("year=")) {
+          continue;
+        }
+        const months = await fs.readdir(path.join(archive, "activities", year));
+        for (const month of months) {
+          if (!month.startsWith("month=")) {
+            continue;
+          }
+          try {
+            const raw = await fs.readFile(path.join(archive, "activities", year, month, "activities.json"), "utf8");
+            const parsed = JSON.parse(raw) as unknown;
+            if (Array.isArray(parsed)) {
+              rows.push(...(parsed.filter((row) => row && typeof row === "object") as JsonObject[]));
+            }
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+              throw error;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    return rows;
+  }
+
+  private archiveDir(): string {
+    return path.resolve(this.baseDir, "..", "archive");
+  }
 }
 
 export class GcsDataReader implements GarminDataReader {
@@ -75,6 +138,21 @@ export class GcsDataReader implements GarminDataReader {
   async readActivityDetail(activityId: string): Promise<JsonObject | null> {
     try {
       return await this.readJson<JsonObject>(`${this.prefix}/activity_details/${activityId}.json`);
+    } catch (error) {
+      const code = (error as { code?: number }).code;
+      if (code === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async readActivityStream(activityId: string, source: "latest" | "archive" | "auto" = "auto"): Promise<JsonObject | null> {
+    if (source === "archive") {
+      return null;
+    }
+    try {
+      return await this.readJson<JsonObject>(`${this.prefix}/activity_streams/${activityId}.json`);
     } catch (error) {
       const code = (error as { code?: number }).code;
       if (code === 404) {

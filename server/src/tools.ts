@@ -1,9 +1,25 @@
 import { z } from "zod";
 import { daysAgoIso, filterByDateRange, inclusiveDays, isIsoDate, latestByDate, todayIso } from "./date.js";
+import { syncNow, runningSyncState, type SyncNowOptions } from "./syncNow.js";
 import type { GarminDataReader, JsonObject } from "./types.js";
+import { allActivities, activityId, analyze, latestWorkout, shapeStream, summarizeWorkout, type StreamSource } from "./workouts.js";
 
 const isoDateSchema = z.string().refine(isIsoDate, "Use YYYY-MM-DD.");
 const daysSchema = z.number().int().min(1).max(30).default(14);
+const workoutDaysSchema = z.number().int().min(1).max(90).default(30);
+const streamSourceSchema = z.enum(["latest", "archive", "auto"]).default("auto");
+const sportCategorySchema = z.enum(["cycling", "running", "walking", "badminton", "strength", "mobility", "other"]);
+const workoutFilterShape = {
+  activity_types: z.array(z.string()).optional(),
+  exclude_activity_types: z.array(z.string()).optional(),
+  sport_categories: z.array(sportCategorySchema).optional(),
+  days: workoutDaysSchema
+};
+const streamOptionsShape = {
+  fields: z.array(z.string()).optional(),
+  downsample: z.boolean().default(false),
+  max_points: z.number().int().min(1).nullable().optional()
+};
 
 export const inputShapes = {
   get_today_summary: {
@@ -24,6 +40,46 @@ export const inputShapes = {
   },
   get_sync_status: {},
   get_latest_activity: {},
+  sync_now: {
+    days: z.number().int().min(1).max(30).default(7),
+    force_login: z.boolean().default(false),
+    activity_streams: z.boolean().default(true),
+    include_raw: z.boolean().default(true)
+  },
+  get_latest_workout: workoutFilterShape,
+  get_latest_workout_summary: workoutFilterShape,
+  get_latest_workout_streams: {
+    ...workoutFilterShape,
+    ...streamOptionsShape
+  },
+  get_activity_streams: {
+    activity_id: z.string().min(1),
+    source: streamSourceSchema,
+    ...streamOptionsShape
+  },
+  analyze_activity: {
+    activity_id: z.string().min(1),
+    analysis_type: z.enum(["general", "cycling", "running", "walking", "badminton", "strength", "mobility", "rehab"]).default("general"),
+    include_streams: z.boolean().default(true),
+    source: streamSourceSchema
+  },
+  analyze_latest_workout: {
+    activity_types: z.array(z.string()).optional(),
+    sport_categories: z.array(sportCategorySchema).optional(),
+    analysis_type: z.enum(["general", "cycling", "running", "walking", "badminton", "strength", "mobility", "rehab"]).default("general"),
+    days: workoutDaysSchema,
+    include_streams: z.boolean().default(true)
+  },
+  get_latest_ride: {
+    days: workoutDaysSchema
+  },
+  get_latest_ride_summary: {
+    days: workoutDaysSchema
+  },
+  get_latest_ride_streams: {
+    days: workoutDaysSchema,
+    ...streamOptionsShape
+  },
   health_check: {}
 };
 
@@ -38,6 +94,16 @@ export const inputSchemas = {
   get_coach_context: z.object(inputShapes.get_coach_context),
   get_sync_status: z.object(inputShapes.get_sync_status),
   get_latest_activity: z.object(inputShapes.get_latest_activity),
+  sync_now: z.object(inputShapes.sync_now),
+  get_latest_workout: z.object(inputShapes.get_latest_workout),
+  get_latest_workout_summary: z.object(inputShapes.get_latest_workout_summary),
+  get_latest_workout_streams: z.object(inputShapes.get_latest_workout_streams),
+  get_activity_streams: z.object(inputShapes.get_activity_streams),
+  analyze_activity: z.object(inputShapes.analyze_activity),
+  analyze_latest_workout: z.object(inputShapes.analyze_latest_workout),
+  get_latest_ride: z.object(inputShapes.get_latest_ride),
+  get_latest_ride_summary: z.object(inputShapes.get_latest_ride_summary),
+  get_latest_ride_streams: z.object(inputShapes.get_latest_ride_streams),
   health_check: z.object(inputShapes.health_check)
 };
 
@@ -62,8 +128,15 @@ async function safeCollection(reader: GarminDataReader, collection: string): Pro
   }
 }
 
-export function createToolHandlers(reader: GarminDataReader) {
+export function createToolHandlers(reader: GarminDataReader, options: SyncNowOptions = {}) {
   async function readSyncStatus(): Promise<JsonObject> {
+    const dataDir = options.dataDir ?? process.env.GARMIN_DATA_DIR ?? process.env.SERVER_DATA_DIR;
+    if (dataDir) {
+      const running = await runningSyncState(dataDir);
+      if (running) {
+        return running;
+      }
+    }
     try {
       return await reader.readJson<JsonObject>("latest/latest_sync_status.json");
     } catch {
@@ -76,6 +149,38 @@ export function createToolHandlers(reader: GarminDataReader) {
         };
       }
     }
+  }
+
+  async function streamFor(activity_id: string, source: StreamSource = "auto") {
+    return reader.readActivityStream(activity_id, source);
+  }
+
+  async function latestMatching(input: z.infer<typeof inputSchemas.get_latest_workout>) {
+    const activity = latestWorkout(await allActivities(reader), input);
+    const id = activity ? activityId(activity) : null;
+    const stream = id ? await streamFor(id) : null;
+    return { activity, id, stream };
+  }
+
+  async function latestStreamResponse(input: z.infer<typeof inputSchemas.get_latest_workout_streams>, filter = {}) {
+    const activity = latestWorkout(await allActivities(reader), { ...input, ...filter });
+    const id = activity ? activityId(activity) : null;
+    const stream = id ? await streamFor(id) : null;
+    if (!activity || !id) {
+      return ok({ found: false, message: "No matching Garmin workout found." });
+    }
+    if (!stream) {
+      return ok({
+        found: false,
+        activity_id: id,
+        message: "No Garmin stream file found for activity_id. Run sync/backfill with activity streams enabled. Garmin MCP currently has only summary/detail data for this activity."
+      });
+    }
+    return ok({
+      found: true,
+      activity_summary: summarizeWorkout(activity, stream),
+      stream: shapeStream(stream, input)
+    });
   }
 
   return {
@@ -144,7 +249,8 @@ export function createToolHandlers(reader: GarminDataReader) {
         activity_id: input.activity_id,
         detail,
         missing: detail === null,
-        streams_omitted: true
+        streams_omitted: true,
+        next_tool_hint: "For full Garmin streams, call get_activity_streams."
       });
     },
 
@@ -200,7 +306,8 @@ export function createToolHandlers(reader: GarminDataReader) {
           activity_id: latestActivityId,
           detail,
           missing: detail === null,
-          source: "latest_sync_status"
+          source: "latest_sync_status",
+          next_tool_hint: "For full Garmin streams, call get_activity_streams or get_latest_workout_streams."
         });
       }
 
@@ -212,7 +319,8 @@ export function createToolHandlers(reader: GarminDataReader) {
           activity_id: latestActivity.id,
           detail: detail ?? latestActivity,
           missing: false,
-          source: "activities"
+          source: "activities",
+          next_tool_hint: "For full Garmin streams, call get_activity_streams or get_latest_workout_streams."
         });
       }
 
@@ -221,6 +329,95 @@ export function createToolHandlers(reader: GarminDataReader) {
         detail: null,
         missing: true
       });
+    },
+
+    async sync_now(input: z.infer<typeof inputSchemas.sync_now>) {
+      return ok(await syncNow(input, options));
+    },
+
+    async get_latest_workout(input: z.infer<typeof inputSchemas.get_latest_workout>) {
+      const { activity, id, stream } = await latestMatching(input);
+      return ok({
+        found: activity !== null,
+        activity_id: id,
+        activity,
+        summary: summarizeWorkout(activity, stream),
+        has_streams: stream !== null,
+        stream_available_fields: Array.isArray(stream?.fields) ? stream.fields : [],
+        next_tool_hint: "For full Garmin streams, call get_latest_workout_streams or get_activity_streams."
+      });
+    },
+
+    async get_latest_workout_summary(input: z.infer<typeof inputSchemas.get_latest_workout_summary>) {
+      const { activity, stream } = await latestMatching(input);
+      return ok(summarizeWorkout(activity, stream));
+    },
+
+    async get_latest_workout_streams(input: z.infer<typeof inputSchemas.get_latest_workout_streams>) {
+      return latestStreamResponse(input);
+    },
+
+    async get_activity_streams(input: z.infer<typeof inputSchemas.get_activity_streams>) {
+      const stream = await streamFor(input.activity_id, input.source);
+      if (!stream) {
+        return ok({
+          found: false,
+          activity_id: input.activity_id,
+          message: "No Garmin stream file found for activity_id. Run sync/backfill with activity streams enabled. Garmin MCP currently has only summary/detail data for this activity."
+        });
+      }
+      return ok({
+        found: true,
+        activity_id: input.activity_id,
+        stream: shapeStream(stream, input)
+      });
+    },
+
+    async analyze_activity(input: z.infer<typeof inputSchemas.analyze_activity>) {
+      const stream = await streamFor(input.activity_id, input.source);
+      const activities = await allActivities(reader);
+      const activity = activities.find((item) => activityId(item) === input.activity_id) ?? (await reader.readActivityDetail(input.activity_id));
+      return ok({
+        analysis_type: input.analysis_type,
+        ...analyze(activity, stream, input.include_streams)
+      });
+    },
+
+    async analyze_latest_workout(input: z.infer<typeof inputSchemas.analyze_latest_workout>) {
+      const activity = latestWorkout(await allActivities(reader), input);
+      const id = activity ? activityId(activity) : null;
+      const stream = id ? await streamFor(id) : null;
+      return ok({
+        analysis_type: input.analysis_type,
+        activity_id: id,
+        ...analyze(activity, stream, input.include_streams)
+      });
+    },
+
+    async get_latest_ride(input: z.infer<typeof inputSchemas.get_latest_ride>) {
+      const activity = latestWorkout(await allActivities(reader), { days: input.days, sport_categories: ["cycling"] });
+      const id = activity ? activityId(activity) : null;
+      const stream = id ? await streamFor(id) : null;
+      return ok({
+        found: activity !== null,
+        activity_id: id,
+        activity,
+        summary: summarizeWorkout(activity, stream),
+        has_streams: stream !== null,
+        stream_available_fields: Array.isArray(stream?.fields) ? stream.fields : [],
+        hint: "For full Garmin ride streams, call get_latest_ride_streams."
+      });
+    },
+
+    async get_latest_ride_summary(input: z.infer<typeof inputSchemas.get_latest_ride_summary>) {
+      const activity = latestWorkout(await allActivities(reader), { days: input.days, sport_categories: ["cycling"] });
+      const id = activity ? activityId(activity) : null;
+      const stream = id ? await streamFor(id) : null;
+      return ok({ ...summarizeWorkout(activity, stream), next_tool_hint: "For full Garmin ride streams, call get_latest_ride_streams." });
+    },
+
+    async get_latest_ride_streams(input: z.infer<typeof inputSchemas.get_latest_ride_streams>) {
+      return latestStreamResponse({ ...input, sport_categories: ["cycling"] });
     },
 
     async health_check() {
