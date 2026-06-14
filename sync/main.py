@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from dotenv import load_dotenv
 
-from .activity_streams import fetch_activity_payloads, normalize_activity_stream
+from .activity_streams import endpoint_payload, fetch_activity_payloads, normalize_activity_stream
 from .coach_context import generate_coach_context
 from .garmin_sync.normalizers import (
     normalize_activity,
@@ -170,9 +170,9 @@ def _write_outputs(
     for activity in activities[:30]:
         activity_id = str(activity["id"])
         payloads = fetch_activity_payloads(client, activity_id)
-        detail_raw = payloads.get("activity") if isinstance(payloads.get("activity"), dict) else {}
-        if not detail_raw and isinstance(payloads.get("activity_details"), dict):
-            detail_raw = payloads["activity_details"]
+        detail_raw = endpoint_payload(payloads.get("activity")) if isinstance(endpoint_payload(payloads.get("activity")), dict) else {}
+        if not detail_raw and isinstance(endpoint_payload(payloads.get("activity_details")), dict):
+            detail_raw = endpoint_payload(payloads.get("activity_details"))
         if activity_details:
             write_json(details_dir / f"{activity_id}.json", normalize_activity_detail(detail_raw or activity, fallback=activity))
         if activity_streams:

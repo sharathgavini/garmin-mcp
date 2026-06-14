@@ -31,6 +31,24 @@ docker exec garmin-mcp python -m sync.backfill \
 
 Backfill writes `backfill_checkpoint.json` after each chunk. Existing activity details and stream files are skipped unless `--force` is passed, which keeps reruns safe for long Garmin histories.
 
+Raw payloads are written under the archive itself when `--include-raw true`:
+
+```text
+/app/data/archive/raw/daily/...
+/app/data/archive/raw/activity_details/{activity_id}.json
+/app/data/archive/raw/activity_streams/{activity_id}.json
+```
+
+Before rerunning a forced backfill to repair extraction, inspect a known activity first:
+
+```bash
+docker exec garmin-mcp python -m sync.inspect_activity \
+  --activity-id 23206576686 \
+  --output /app/data/debug
+```
+
+See [DEBUG_GARMIN_ACTIVITY.md](DEBUG_GARMIN_ACTIVITY.md).
+
 ## Archive Queries
 
 The MCP server reads partitioned archive files for explicit historical ranges. Use archive tools for anything beyond the latest sync window, such as 90-day trends, month-over-month comparisons, or all activities in a season.

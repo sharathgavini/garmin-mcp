@@ -94,7 +94,9 @@ def test_run_sync_writes_normalized_json(monkeypatch, tmp_path):
     assert status["latest_activity_id"] == "123"
 
     detail = json.loads((tmp_path / "activity_details" / "123.json").read_text())
-    assert detail["streams_omitted"] is True
+    assert detail["streams_stored_separately"] is True
+    assert detail["stream_path"] == "activity_streams/123.json"
+    assert detail["max_hr"] == 170
     assert "activityType" not in detail
 
     stream = json.loads((tmp_path / "activity_streams" / "123.json").read_text())

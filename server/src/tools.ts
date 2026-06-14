@@ -321,6 +321,34 @@ function recoveryAverage(summary: JsonObject, metric: string, key: string): unkn
   return averages?.[key] ?? null;
 }
 
+function streamExtractionNotice(stream: JsonObject | null): JsonObject {
+  if (!stream) {
+    return {};
+  }
+  const fields = Array.isArray(stream.fields) ? stream.fields.map(String) : [];
+  const availability = stream.availability && typeof stream.availability === "object" ? (stream.availability as JsonObject) : {};
+  const missing = Array.isArray(availability.missing_fields) ? availability.missing_fields : [];
+  const sampleCount = typeof stream.sample_count === "number" ? stream.sample_count : 0;
+  if (sampleCount === 0) {
+    return {
+      extraction_status: stream.extraction_status ?? "no_samples_found",
+      checked_payloads: stream.checked_payloads ?? [],
+      recommendation: "Run inspect_activity for this activity to diagnose Garmin payload availability."
+    };
+  }
+  if (missing.length > 0) {
+    return {
+      partial_stream: true,
+      available_fields: fields,
+      missing_fields: missing,
+      recommendation: "Run inspect_activity for this activity to diagnose Garmin payload availability."
+    };
+  }
+  return {
+    extraction_status: stream.extraction_status ?? "ok"
+  };
+}
+
 export function createToolHandlers(reader: GarminDataReader, options: SyncNowOptions = {}) {
   // Sync status first checks for an active local lock so users can poll after sync_now.
   async function readSyncStatus(): Promise<JsonObject> {
@@ -376,6 +404,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     return ok({
       found: true,
       activity_summary: summarizeWorkout(activity, stream),
+      extraction: streamExtractionNotice(stream),
       stream: shapeStream(stream, input)
     });
   }
@@ -578,6 +607,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok({
         found: true,
         activity_id: input.activity_id,
+        extraction: streamExtractionNotice(stream),
         stream: shapeStream(stream, input)
       });
     },

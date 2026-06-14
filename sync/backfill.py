@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterable
 
 from dotenv import load_dotenv
 
-from .activity_streams import fetch_activity_payloads, normalize_activity_stream
+from .activity_streams import endpoint_payload, fetch_activity_payloads, normalize_activity_stream
 from .garmin_sync.normalizers import (
     normalize_activity,
     normalize_activity_detail,
@@ -227,9 +227,9 @@ def write_activity_details(output: Path, client: Any, activities: list[dict[str,
         if path.exists() and not force:
             continue
         payloads = fetch_activity_payloads(client, activity_id)
-        detail_raw = payloads.get("activity") if isinstance(payloads.get("activity"), dict) else {}
-        if not detail_raw and isinstance(payloads.get("activity_details"), dict):
-            detail_raw = payloads["activity_details"]
+        detail_raw = endpoint_payload(payloads.get("activity")) if isinstance(endpoint_payload(payloads.get("activity")), dict) else {}
+        if not detail_raw and isinstance(endpoint_payload(payloads.get("activity_details")), dict):
+            detail_raw = endpoint_payload(payloads.get("activity_details"))
         write_json(path, normalize_activity_detail(detail_raw or activity, fallback=activity))
         if include_raw:
             write_json(raw_output_dir(output) / "activity_details" / f"{activity_id}.json", payloads)
@@ -268,7 +268,7 @@ def generate_archive_manifest(output: Path, start: date, end: date) -> dict[str,
 
 
 def raw_output_dir(output: Path) -> Path:
-    return output.parent / "raw" if output.name == "archive" else output / "raw"
+    return output / "raw"
 
 
 def count_partition_rows(root: Path, filename: str) -> int:

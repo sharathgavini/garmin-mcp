@@ -66,4 +66,4 @@ def _is_normalized_output(local_dir: Path, path: Path) -> bool:
     parts = relative.parts
     if len(parts) == 1:
         return parts[0] in NORMALIZED_TOP_LEVEL_FILES
-    return len(parts) == 2 and parts[0] == "activity_details"
+    return len(parts) == 2 and parts[0] in {"activity_details", "activity_streams"}

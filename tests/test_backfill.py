@@ -195,7 +195,7 @@ def test_include_raw_writes_raw_partition(tmp_path):
     assert (tmp_path / "raw" / "activity_streams" / "activity-2026-06-01.json").exists()
 
 
-def test_archive_output_writes_raw_to_sibling_raw_dir(tmp_path):
+def test_archive_output_writes_raw_inside_archive_raw_dir(tmp_path):
     client = FakeBackfillClient()
     archive = tmp_path / "archive"
 
@@ -209,7 +209,7 @@ def test_archive_output_writes_raw_to_sibling_raw_dir(tmp_path):
         client=client,
     )
 
-    assert (tmp_path / "raw" / "daily" / "year=2026" / "month=06" / "daily.json").exists()
+    assert (archive / "raw" / "daily" / "year=2026" / "month=06" / "daily.json").exists()
 
 
 def test_backfill_bool_flags_accept_true_false(tmp_path):

@@ -22,6 +22,8 @@ Sport categories are normalized to cycling, running, walking, badminton, strengt
 
 `analyze_activity` returns summary data, stream availability, HR distribution, HR drift, stop/start count, cadence consistency, speed consistency, warmup/cooldown signals, recovery load estimate, power/HR relation when power exists, laps/splits, and a `raw_stream_reference` pointing back to `get_activity_streams`.
 
+If stream output is empty or partial, the MCP response includes extraction status, checked payloads when available, missing fields, and a recommendation to run `sync.inspect_activity`.
+
 Example prompts:
 
 ```text

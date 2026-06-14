@@ -39,6 +39,12 @@ Historical backfill:
 python -m sync.backfill --start-date 2025-10-01 --end-date 2026-06-14 --output ./local-data/archive --include-raw true --activity-details true --activity-streams true
 ```
 
+Inspect one activity:
+
+```bash
+python -m sync.inspect_activity --activity-id 23206576686 --output ./local-data/debug
+```
+
 Dry-run GCS upload:
 
 ```bash

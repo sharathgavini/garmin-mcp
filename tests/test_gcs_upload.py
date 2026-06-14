@@ -9,11 +9,15 @@ def test_json_upload_mappings_include_nested_activity_details(tmp_path):
     details = tmp_path / "activity_details"
     details.mkdir()
     (details / "123.json").write_text("{}", encoding="utf-8")
+    streams = tmp_path / "activity_streams"
+    streams.mkdir()
+    (streams / "123.json").write_text("{}", encoding="utf-8")
 
     mappings = gcs_upload.json_upload_mappings(tmp_path, "latest")
 
     assert [(path.name, object_name) for path, object_name in mappings] == [
         ("123.json", "latest/activity_details/123.json"),
+        ("123.json", "latest/activity_streams/123.json"),
         ("manifest.json", "latest/manifest.json"),
     ]
 
@@ -43,6 +47,9 @@ def test_upload_directory_calls_upload_file(monkeypatch, tmp_path):
     details = tmp_path / "activity_details"
     details.mkdir()
     (details / "123.json").write_text("{}", encoding="utf-8")
+    streams = tmp_path / "activity_streams"
+    streams.mkdir()
+    (streams / "123.json").write_text("{}", encoding="utf-8")
     calls = []
 
     monkeypatch.setattr(
@@ -55,5 +62,6 @@ def test_upload_directory_calls_upload_file(monkeypatch, tmp_path):
 
     assert calls == [
         ("123.json", "bucket-name", "latest/activity_details/123.json"),
+        ("123.json", "bucket-name", "latest/activity_streams/123.json"),
         ("manifest.json", "bucket-name", "latest/manifest.json"),
     ]

@@ -111,7 +111,8 @@ def normalize_body_battery(raw: dict[str, Any] | list[Any], day: date | str) -> 
 
 
 def normalize_activity(raw: dict[str, Any]) -> dict[str, Any]:
-    activity_type = pick(raw, "activityType", "activity_type", "type")
+    summary = raw.get("summaryDTO") if isinstance(raw.get("summaryDTO"), dict) else {}
+    activity_type = pick(raw, "activityType", "activityTypeDTO", "activity_type", "type")
     if isinstance(activity_type, dict):
         activity_type = pick(activity_type, "typeKey", "typeId", "parentTypeId")
     activity_id = pick(raw, "activityId", "id")
@@ -120,12 +121,12 @@ def normalize_activity(raw: dict[str, Any]) -> dict[str, Any]:
         {
             "id": str(activity_id) if activity_id is not None else None,
             "type": activity_type,
-            "date": str(pick(raw, "startTimeLocal", "date", "startDateLocal"))[:10],
-            "distance_meters": pick(raw, "distance", "distanceMeters"),
-            "duration_seconds": pick(raw, "duration", "elapsedDuration"),
-            "avg_hr": pick(raw, "averageHR", "avg_hr"),
-            "calories": pick(raw, "calories"),
-            "training_effect": pick(raw, "aerobicTrainingEffect", "trainingEffect"),
+            "date": str(pick(raw, "startTimeLocal", "date", "startDateLocal") or pick(summary, "startTimeLocal", "startTimeGMT"))[:10],
+            "distance_meters": pick(raw, "distance", "distanceMeters") or pick(summary, "distance"),
+            "duration_seconds": pick(raw, "duration", "elapsedDuration") or pick(summary, "duration"),
+            "avg_hr": pick(raw, "averageHR", "avg_hr") or pick(summary, "averageHR"),
+            "calories": pick(raw, "calories") or pick(summary, "calories"),
+            "training_effect": pick(raw, "aerobicTrainingEffect", "trainingEffect") or pick(summary, "trainingEffect"),
         }
     )
 
@@ -133,23 +134,53 @@ def normalize_activity(raw: dict[str, Any]) -> dict[str, Any]:
 def normalize_activity_detail(raw: dict[str, Any], fallback: dict[str, Any] | None = None) -> dict[str, Any]:
     fallback = fallback or {}
     summary = normalize_activity(raw) if raw else {}
+    raw_summary = raw.get("summaryDTO") if isinstance(raw.get("summaryDTO"), dict) else raw
     laps = pick(raw, "laps", "lapDTOs") or []
+    splits = pick(raw, "splits", "splitDTOs", "activitySplits") or []
+    activity_id = summary.get("id") or fallback.get("id")
     return compact(
         {
-            "id": summary.get("id") or fallback.get("id"),
+            "activity_id": activity_id,
+            "id": activity_id,
+            "activity_name": pick(raw, "activityName", "activity_name", "name"),
+            "activity_type": summary.get("type") or fallback.get("type"),
             "type": summary.get("type") or fallback.get("type"),
+            "sport_category": pick(raw, "sportType", "sport_type", "parentTypeId"),
+            "start_time": pick(raw, "startTimeLocal", "startTimeGMT", "start_time") or pick(raw_summary, "startTimeLocal", "startTimeGMT"),
             "date": summary.get("date") or fallback.get("date"),
+            "elapsed_duration_seconds": pick(raw, "elapsedDuration", "elapsed_duration_seconds") or pick(raw_summary, "elapsedDuration"),
+            "moving_duration_seconds": pick(raw, "movingDuration", "moving_duration_seconds") or pick(raw_summary, "movingDuration"),
             "distance_meters": summary.get("distance_meters") or fallback.get("distance_meters"),
             "duration_seconds": summary.get("duration_seconds") or fallback.get("duration_seconds"),
             "avg_hr": summary.get("avg_hr") or fallback.get("avg_hr"),
-            "max_hr": pick(raw, "maxHR", "maxHr", "maxHeartRate"),
+            "max_hr": pick(raw, "maxHR", "maxHr", "maxHeartRate") or pick(raw_summary, "maxHR"),
+            "avg_cadence": pick(raw, "averageBikingCadenceInRevPerMinute", "averageRunningCadenceInStepsPerMinute", "averageCadence", "avg_cadence")
+            or pick(raw_summary, "averageBikeCadence", "averageRunCadence"),
+            "max_cadence": pick(raw, "maxBikingCadenceInRevPerMinute", "maxRunningCadenceInStepsPerMinute", "maxCadence", "max_cadence")
+            or pick(raw_summary, "maxBikeCadence", "maxRunCadence"),
+            "avg_speed_mps": pick(raw, "averageSpeed", "avgSpeed", "avg_speed_mps") or pick(raw_summary, "averageSpeed"),
+            "max_speed_mps": pick(raw, "maxSpeed", "max_speed_mps") or pick(raw_summary, "maxSpeed"),
             "calories": summary.get("calories") or fallback.get("calories"),
             "training_effect": summary.get("training_effect") or fallback.get("training_effect"),
-            "aerobic_training_effect": pick(raw, "aerobicTrainingEffect"),
-            "anaerobic_training_effect": pick(raw, "anaerobicTrainingEffect"),
-            "elevation_gain_meters": pick(raw, "elevationGain", "elevationGainMeters"),
+            "aerobic_training_effect": pick(raw, "aerobicTrainingEffect") or pick(raw_summary, "trainingEffect"),
+            "anaerobic_training_effect": pick(raw, "anaerobicTrainingEffect") or pick(raw_summary, "anaerobicTrainingEffect"),
+            "training_load": pick(raw, "trainingLoad", "exerciseLoad", "training_load") or pick(raw_summary, "activityTrainingLoad"),
+            "recovery_time": pick(raw, "recoveryTime", "recovery_time") or pick(raw_summary, "recoveryTime"),
+            "avg_power": pick(raw, "avgPower", "averagePower", "avg_power") or pick(raw_summary, "averagePower"),
+            "normalized_power": pick(raw, "normPower", "normalizedPower", "normalized_power") or pick(raw_summary, "normPower", "normalizedPower"),
+            "max_power": pick(raw, "maxPower", "max_power") or pick(raw_summary, "maxPower"),
+            "ftp": pick(raw, "ftp"),
+            "vo2max": pick(raw, "vO2MaxValue", "vo2max", "VO2Max"),
+            "performance_condition": pick(raw, "performanceCondition", "performance_condition"),
+            "elevation_gain_m": pick(raw, "elevationGain", "elevationGainMeters") or pick(raw_summary, "elevationGain"),
+            "elevation_gain_meters": pick(raw, "elevationGain", "elevationGainMeters") or pick(raw_summary, "elevationGain"),
+            "elevation_loss_m": pick(raw, "elevationLoss", "elevationLossMeters") or pick(raw_summary, "elevationLoss"),
+            "weather": pick(raw, "weather", "weatherDTO"),
+            "device_info": pick(raw, "deviceInfo", "metadataDTO", "deviceDTO"),
             "laps": [_normalize_lap(lap, index + 1) for index, lap in enumerate(laps[:50]) if isinstance(lap, dict)],
-            "streams_omitted": True,
+            "splits": [_normalize_lap(split, index + 1) for index, split in enumerate(splits[:100]) if isinstance(split, dict)],
+            "streams_stored_separately": True if activity_id else None,
+            "stream_path": f"activity_streams/{activity_id}.json" if activity_id else None,
         }
     )
 

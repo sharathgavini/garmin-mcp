@@ -16,6 +16,7 @@ This directory contains human and agent-facing documentation for Garmin MCP.
 - [Architecture](ARCHITECTURE.md)
 - [Agent Guide](AGENTS.md)
 - [Activity Streams](ACTIVITY_STREAMS.md)
+- [Debug Garmin Activity](DEBUG_GARMIN_ACTIVITY.md)
 - [Workout Analysis](WORKOUT_ANALYSIS.md)
 - [Historical Backfill](HISTORICAL_BACKFILL.md)
 - [Threat Model](threat-model.md)
