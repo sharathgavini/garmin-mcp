@@ -19,7 +19,7 @@ This project keeps Garmin login/session material out of the MCP server. A schedu
 cd server
 npm install
 npm test
-SERVER_DATA_DIR=../sample-data MCP_BEARER_TOKEN=dev-token npm run dev
+GARMIN_DATA_MODE=local GARMIN_DATA_DIR=../sample-data MCP_BEARER_TOKEN=dev-token npm run dev
 ```
 
 The local server exposes:

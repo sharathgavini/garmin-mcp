@@ -6,12 +6,12 @@
 cd server
 npm install
 npm test
-SERVER_DATA_DIR=../sample-data MCP_BEARER_TOKEN=dev-token npm run dev
+GARMIN_DATA_MODE=local GARMIN_DATA_DIR=../sample-data MCP_BEARER_TOKEN=dev-token npm run dev
 ```
 
-Call `GET http://localhost:8080/healthz` for a simple readiness check.
+Call `GET http://localhost:3000/healthz` for a simple readiness check.
 
-MCP requests go to `POST http://localhost:8080/mcp` and must include:
+MCP requests go to `POST http://localhost:3000/mcp` and must include:
 
 ```text
 Authorization: Bearer dev-token

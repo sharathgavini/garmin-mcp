@@ -86,9 +86,12 @@ export class GcsDataReader implements GarminDataReader {
 }
 
 export function createDataReader(): GarminDataReader {
+  const mode = process.env.GARMIN_DATA_MODE;
   const bucket = process.env.GCS_BUCKET;
-  if (bucket) {
+  if (bucket && mode !== "local") {
     return new GcsDataReader(bucket, process.env.GCS_PREFIX ?? "latest");
   }
-  return new LocalDataReader(process.env.SERVER_DATA_DIR ?? path.resolve(process.cwd(), "../sample-data"));
+  return new LocalDataReader(
+    process.env.GARMIN_DATA_DIR ?? process.env.SERVER_DATA_DIR ?? path.resolve(process.cwd(), "../sample-data")
+  );
 }

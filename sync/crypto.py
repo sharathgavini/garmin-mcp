@@ -52,6 +52,11 @@ def _decode_key(value: str) -> bytes:
     except Exception:
         pass
     try:
+        padded = stripped + ("=" * (-len(stripped) % 4))
+        candidates.append(base64.urlsafe_b64decode(padded))
+    except Exception:
+        pass
+    try:
         candidates.append(bytes.fromhex(stripped))
     except ValueError:
         pass

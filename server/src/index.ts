@@ -7,7 +7,7 @@ import { createDataReader } from "./data.js";
 import { createToolHandlers, inputSchemas, inputShapes, type ToolName } from "./tools.js";
 
 const app = express();
-const port = Number(process.env.PORT ?? 8080);
+const port = Number(process.env.PORT ?? 3000);
 const bearerToken = process.env.MCP_BEARER_TOKEN;
 const reader = createDataReader();
 const handlers = createToolHandlers(reader);

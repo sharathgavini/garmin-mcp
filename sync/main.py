@@ -6,6 +6,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from dotenv import load_dotenv
+
 from .coach_context import generate_coach_context
 from .garmin_sync.normalizers import (
     normalize_activity,
@@ -146,6 +148,7 @@ def _safe_list(func: Callable[..., Any] | None, *args: Any) -> list[Any]:
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Sync Garmin Connect data to normalized MCP JSON.")
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--output", type=Path, default=Path("./output"))

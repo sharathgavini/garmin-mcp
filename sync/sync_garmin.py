@@ -5,12 +5,15 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sync.main import run_sync
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Compatibility wrapper for python -m sync.main.")
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--out", "--output", dest="output", type=Path, default=Path("sync-output"))

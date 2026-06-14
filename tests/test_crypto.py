@@ -1,5 +1,5 @@
 import base64
-import os
+import secrets
 
 import pytest
 
@@ -28,3 +28,12 @@ def test_key_must_be_32_bytes(monkeypatch):
 
     with pytest.raises(SessionCryptoError):
         encrypt_session("token")
+
+
+def test_accepts_token_urlsafe_key_from_setup_instructions(monkeypatch):
+    key = secrets.token_urlsafe(32)
+    monkeypatch.setenv("GARMIN_SESSION_KEY", key)
+
+    encrypted = encrypt_session("token")
+
+    assert decrypt_session(encrypted) == "token"
