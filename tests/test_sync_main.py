@@ -64,3 +64,16 @@ def test_run_sync_writes_normalized_json(monkeypatch, tmp_path):
     detail = json.loads((tmp_path / "activity_details" / "123.json").read_text())
     assert detail["streams_omitted"] is True
     assert "activityType" not in detail
+
+
+def test_run_sync_removes_stale_activity_details(monkeypatch, tmp_path):
+    monkeypatch.setattr(sync_main, "login_or_restore", lambda **kwargs: FakeClient())
+    monkeypatch.setattr(sync_main, "_date_range", lambda days: [sync_main.date(2999, 1, 1)])
+    stale_dir = tmp_path / "activity_details"
+    stale_dir.mkdir()
+    stale_file = stale_dir / "stale.json"
+    stale_file.write_text("{}", encoding="utf-8")
+
+    sync_main.run_sync(days=1, output=tmp_path)
+
+    assert not stale_file.exists()

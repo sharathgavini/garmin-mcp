@@ -81,6 +81,7 @@ def _write_outputs(
     write_json(output / "activities.json", activities)
 
     details_dir = output / "activity_details"
+    _clear_json_files(details_dir)
     for activity in activities[:30]:
         activity_id = str(activity["id"])
         detail_raw = _safe_dict(getattr(client, "get_activity", None), activity_id)
@@ -118,6 +119,13 @@ def _manifest(days_to_fetch: list[date]) -> dict[str, Any]:
             "coach_context_14d": "latest/coach_context_14d.json",
         },
     }
+
+
+def _clear_json_files(directory: Path) -> None:
+    if not directory.exists():
+        return
+    for path in directory.glob("*.json"):
+        path.unlink()
 
 
 def _date_range(days: int) -> list[date]:
