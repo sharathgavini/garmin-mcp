@@ -17,11 +17,7 @@ services:
       SYNC_DAYS: "30"
       RUN_INITIAL_SYNC: "false"
     volumes:
-      - garmin-data:/app/data
-      - garmin-secrets:/app/secrets
+      - ${HOST_DATA_DIR}:/app/data
+      - ${HOST_SECRETS_DIR}:/app/secrets
     ports:
       - "3000:3000"
-
-volumes:
-  garmin-data:
-  garmin-secrets:

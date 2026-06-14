@@ -13,15 +13,28 @@ Cloud Run and GCS support remain available; this is an additional self-hosted pa
 - Default sync schedule: daily at `06:00` in `Asia/Kolkata`
 - Health check: `GET /healthz`
 
+Use this host directory structure on TrueNAS:
+
+```text
+/mnt/scg_pool_1/apps/garmin-mcp/
+├── data
+├── secrets
+└── repo
+```
+
 ## Required Environment
 
 Set these in your TrueNAS app environment or a local `.env.selfhost` for `docker compose`:
 
 ```text
+HOST_DATA_DIR=/mnt/scg_pool_1/apps/garmin-mcp/data
+HOST_SECRETS_DIR=/mnt/scg_pool_1/apps/garmin-mcp/secrets
+
 GARMIN_EMAIL=...
 GARMIN_PASSWORD=...
 GARMIN_SESSION_KEY=...
 MCP_BEARER_TOKEN=...
+
 GARMIN_DATA_MODE=local
 GARMIN_DATA_DIR=/app/data
 GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc
@@ -45,13 +58,34 @@ Build and start:
 docker compose up -d --build
 ```
 
-For compose, keep secrets in `.env.selfhost`:
+For compose, keep host paths and secrets in `.env.selfhost`:
 
 ```text
+HOST_DATA_DIR=/mnt/scg_pool_1/apps/garmin-mcp/data
+HOST_SECRETS_DIR=/mnt/scg_pool_1/apps/garmin-mcp/secrets
+
 GARMIN_EMAIL=...
 GARMIN_PASSWORD=...
 GARMIN_SESSION_KEY=...
 MCP_BEARER_TOKEN=...
+
+GARMIN_DATA_MODE=local
+GARMIN_DATA_DIR=/app/data
+GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc
+TZ=Asia/Kolkata
+```
+
+Validate compose before starting:
+
+```bash
+docker compose config
+```
+
+Expected output should include bind mounts like:
+
+```text
+/mnt/scg_pool_1/apps/garmin-mcp/data:/app/data
+/mnt/scg_pool_1/apps/garmin-mcp/secrets:/app/secrets
 ```
 
 Check health:
@@ -76,10 +110,10 @@ docker logs garmin-mcp
 
 ## TrueNAS Notes
 
-If using the TrueNAS UI instead of `docker compose`, create two persistent host paths or named volumes:
+If using the TrueNAS UI instead of `docker compose`, create two persistent host paths and bind mount them:
 
-- `/app/data`
-- `/app/secrets`
+- `/mnt/scg_pool_1/apps/garmin-mcp/data` to `/app/data`
+- `/mnt/scg_pool_1/apps/garmin-mcp/secrets` to `/app/secrets`
 
 Expose container port `3000` only to the Docker network used by Cloudflare Tunnel if possible. The MCP endpoint still requires `Authorization: Bearer $MCP_BEARER_TOKEN`, but the tunnel should be the only public ingress.
 
