@@ -11,6 +11,48 @@ import { classifySport } from "../src/sports.js";
 
 const sampleDir = path.resolve(process.cwd(), "../sample-data");
 
+async function createArchiveFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "garmin-archive-"));
+  const latest = path.join(root, "latest");
+  const archive = path.join(root, "archive");
+  await mkdir(latest, { recursive: true });
+  await writeFile(path.join(latest, "manifest.json"), "{}");
+  await writeFile(path.join(latest, "activities.json"), "[]");
+
+  async function writePartition(dataset: string, year: string, month: string, rows: unknown[]) {
+    const dir = path.join(archive, dataset, `year=${year}`, `month=${month}`);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, `${dataset}.json`), JSON.stringify(rows, null, 2));
+  }
+
+  await writePartition("activities", "2026", "04", [
+    { id: "ride-apr", type: "road biking", date: "2026-04-20", distance_meters: 20000, duration_seconds: 3600, avg_hr: 138 }
+  ]);
+  await writePartition("activities", "2026", "05", [
+    { id: "ride-may", type: "road biking", date: "2026-05-04", distance_meters: 30000, duration_seconds: 4800, avg_hr: 144 },
+    { id: "badminton-may", type: "badminton", date: "2026-05-10", duration_seconds: 3600, avg_hr: 132 }
+  ]);
+  await writePartition("activities", "2026", "06", [
+    { id: "run-jun", type: "running", date: "2026-06-02", distance_meters: 6000, duration_seconds: 2100, avg_hr: 151 },
+    { id: "ride-jun", type: "road biking", date: "2026-06-14", distance_meters: 42000, duration_seconds: 6600, avg_hr: 146 }
+  ]);
+  await writePartition("daily", "2026", "05", [
+    { date: "2026-05-01", training_readiness: 72, acute_load: 340 },
+    { date: "2026-05-02", training_readiness: 68, acute_load: 360 }
+  ]);
+  await writePartition("daily", "2026", "06", [{ date: "2026-06-01", training_readiness: 74, acute_load: 380 }]);
+  await writePartition("sleep", "2026", "05", [{ date: "2026-05-01", sleep_score: 82 }]);
+  await writePartition("hrv", "2026", "05", [{ date: "2026-05-01", hrv: 48 }]);
+  await writePartition("stress", "2026", "05", [{ date: "2026-05-01", avg_stress: 31 }]);
+  await writePartition("body_battery", "2026", "05", [{ date: "2026-05-01", body_battery_high: 78 }]);
+  await mkdir(path.join(archive, "activity_streams"), { recursive: true });
+  await writeFile(
+    path.join(archive, "activity_streams", "ride-may.json"),
+    JSON.stringify({ activity_id: "ride-may", fields: ["offset_seconds", "heart_rate"], samples: [{ offset_seconds: 0, heart_rate: 120 }] })
+  );
+  return { root, latest };
+}
+
 describe("date filtering", () => {
   it("filters inclusive date ranges", () => {
     const rows = [{ date: "2026-06-11" }, { date: "2026-06-12" }, { date: "2026-06-13" }];
@@ -175,6 +217,94 @@ describe("tool handlers", () => {
     const appSource = await readFile(path.resolve(process.cwd(), "src/app.ts"), "utf8");
     assert.match(appSource, /Full Garmin streams are available/);
     assert.match(appSource, /Returns full Garmin ride streams/);
+    assert.match(appSource, /For historical ranges beyond latest coverage, use get_archive_range_summary/);
+    assert.match(appSource, /For arbitrary historical date ranges, use get_activities_by_date_range/);
+    assert.match(appSource, /For long-range history, use archive tools/);
     assert.doesNotMatch(appSource, /Strava fallback/i);
+  });
+
+  it("selects month partitions and filters archive dates across months", async () => {
+    const { latest } = await createArchiveFixture();
+    const reader = new LocalDataReader(latest);
+    const result = await reader.readArchiveCollection("activities", "2026-04-25", "2026-06-14");
+    assert.deepEqual(result.coverage.requested_partitions, [
+      "activities/year=2026/month=04/activities.json",
+      "activities/year=2026/month=05/activities.json",
+      "activities/year=2026/month=06/activities.json"
+    ]);
+    assert.equal(result.rows.length, 4);
+    assert.equal(result.coverage.available_start_date, "2026-05-04");
+    assert.equal(result.coverage.available_end_date, "2026-06-14");
+  });
+
+  it("reports missing archive partitions and coverage warnings", async () => {
+    const { latest } = await createArchiveFixture();
+    const reader = new LocalDataReader(latest);
+    const result = await reader.readArchiveCollection("sleep", "2026-05-01", "2026-06-14");
+    assert.ok(result.coverage.missing_partitions.includes("sleep/year=2026/month=06/sleep.json"));
+    assert.ok(result.coverage.warnings.length > 0);
+  });
+
+  it("gets archive activities across three months with sport filtering", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_activities_by_date_range({
+      start_date: "2026-04-01",
+      end_date: "2026-06-30",
+      sport_categories: ["cycling"],
+      limit: 100,
+      include_details: false,
+      include_stream_availability: true
+    });
+    assert.equal(result.structuredContent.total_matches, 3);
+    const activities = result.structuredContent.activities as Array<Record<string, unknown>>;
+    assert.deepEqual(activities.map((activity) => activity.id), ["ride-jun", "ride-may", "ride-apr"]);
+    assert.equal(activities.find((activity) => activity.id === "ride-may")?.has_streams, true);
+  });
+
+  it("gets health metrics by archive date range", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_health_metrics_by_date_range({
+      start_date: "2026-05-01",
+      end_date: "2026-06-01",
+      metrics: ["daily", "hrv"]
+    });
+    const metrics = result.structuredContent.metrics as Record<string, { records: unknown[]; coverage: { warnings: string[] } }>;
+    assert.equal(metrics.daily.records.length, 3);
+    assert.equal(metrics.hrv.records.length, 1);
+    assert.ok(metrics.hrv.coverage.warnings.length > 0);
+  });
+
+  it("summarizes and compares archive training periods", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const summary = await archiveHandlers.get_archive_range_summary({
+      start_date: "2026-05-01",
+      end_date: "2026-06-30",
+      sport_categories: ["cycling"]
+    });
+    assert.equal(summary.structuredContent.total_distance_meters, 72000);
+    assert.deepEqual((summary.structuredContent.activity_counts_by_sport_category as Record<string, number>).cycling, 2);
+
+    const analysis = await archiveHandlers.analyze_training_period({
+      start_date: "2026-05-01",
+      end_date: "2026-06-30",
+      sport_categories: ["cycling"],
+      analysis_focus: "cycling",
+      include_stream_metrics: true
+    });
+    assert.equal((analysis.structuredContent.activity_volume as Record<string, unknown>).activity_count, 2);
+    assert.equal((analysis.structuredContent.stream_metrics as Record<string, unknown>).streams_found, 1);
+
+    const comparison = await archiveHandlers.compare_training_periods({
+      period_a_start: "2026-05-01",
+      period_a_end: "2026-05-31",
+      period_b_start: "2026-06-01",
+      period_b_end: "2026-06-30",
+      sport_categories: ["cycling"]
+    });
+    assert.deepEqual((comparison.structuredContent.distance_changes as Record<string, unknown>).change, 12000);
+    assert.ok(Array.isArray(comparison.structuredContent.warnings));
   });
 });

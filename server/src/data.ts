@@ -1,7 +1,7 @@
 import { Storage } from "@google-cloud/storage";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { GarminDataReader, JsonObject, Manifest } from "./types.js";
+import type { ArchiveCollectionResult, GarminDataReader, JsonObject, Manifest } from "./types.js";
 
 const collectionFiles: Record<string, string> = {
   daily: "daily.json",
@@ -25,6 +25,60 @@ export class LocalDataReader implements GarminDataReader {
       throw new Error(`Unknown collection: ${name}`);
     }
     return this.readJson<JsonObject[]>(file);
+  }
+
+  async readArchiveCollection(name: string, startDate: string, endDate: string): Promise<ArchiveCollectionResult> {
+    const file = collectionFiles[name];
+    if (!file) {
+      throw new Error(`Unknown collection: ${name}`);
+    }
+    const rows: JsonObject[] = [];
+    const requested = monthPartitions(startDate, endDate);
+    const loaded: string[] = [];
+    const missing: string[] = [];
+
+    for (const partition of requested) {
+      const relative = path.join(name, `year=${partition.year}`, `month=${partition.month}`, file);
+      const fullPath = path.join(this.archiveDir(), relative);
+      try {
+        const parsed = JSON.parse(await fs.readFile(fullPath, "utf8")) as unknown;
+        if (Array.isArray(parsed)) {
+          rows.push(...(parsed.filter((row) => row && typeof row === "object") as JsonObject[]));
+        }
+        loaded.push(relative);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          missing.push(relative);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const filtered = filterRowsByDate(rows, startDate, endDate);
+    const dates = new Set(filtered.map((row) => rowDate(row)).filter((date): date is string => date !== null));
+    const availableDates = [...dates].sort();
+    const missingDates = eachDate(startDate, endDate).filter((date) => !dates.has(date));
+    const warnings = [
+      ...(missing.length ? [`Missing archive partitions: ${missing.join(", ")}`] : []),
+      ...(missingDates.length ? [`Missing ${missingDates.length} date(s) in ${name} archive data for requested range.`] : [])
+    ];
+
+    return {
+      collection: name,
+      start_date: startDate,
+      end_date: endDate,
+      rows: filtered,
+      coverage: {
+        requested_partitions: requested.map((partition) => path.join(name, `year=${partition.year}`, `month=${partition.month}`, file)),
+        loaded_partitions: loaded,
+        missing_partitions: missing,
+        available_start_date: availableDates[0] ?? null,
+        available_end_date: availableDates[availableDates.length - 1] ?? null,
+        missing_dates: missingDates,
+        warnings
+      }
+    };
   }
 
   async readJson<T>(relativePath: string): Promise<T> {
@@ -130,6 +184,24 @@ export class GcsDataReader implements GarminDataReader {
     return this.readJson<JsonObject[]>(objectName);
   }
 
+  async readArchiveCollection(name: string, startDate: string, endDate: string): Promise<ArchiveCollectionResult> {
+    return {
+      collection: name,
+      start_date: startDate,
+      end_date: endDate,
+      rows: [],
+      coverage: {
+        requested_partitions: [],
+        loaded_partitions: [],
+        missing_partitions: [],
+        available_start_date: null,
+        available_end_date: null,
+        missing_dates: [],
+        warnings: ["Archive range queries are currently available for local self-hosted archive storage."]
+      }
+    };
+  }
+
   async readJson<T>(objectName: string): Promise<T> {
     const [buffer] = await this.storage.bucket(this.bucketName).file(objectName).download();
     return JSON.parse(buffer.toString("utf8")) as T;
@@ -161,6 +233,44 @@ export class GcsDataReader implements GarminDataReader {
       throw error;
     }
   }
+}
+
+function monthPartitions(startDate: string, endDate: string): Array<{ year: string; month: string }> {
+  const start = new Date(`${startDate.slice(0, 7)}-01T00:00:00Z`);
+  const end = new Date(`${endDate.slice(0, 7)}-01T00:00:00Z`);
+  const partitions: Array<{ year: string; month: string }> = [];
+  const current = start;
+  while (current <= end) {
+    partitions.push({
+      year: String(current.getUTCFullYear()).padStart(4, "0"),
+      month: String(current.getUTCMonth() + 1).padStart(2, "0")
+    });
+    current.setUTCMonth(current.getUTCMonth() + 1);
+  }
+  return partitions;
+}
+
+function filterRowsByDate(rows: JsonObject[], startDate: string, endDate: string): JsonObject[] {
+  return rows.filter((row) => {
+    const date = rowDate(row);
+    return date !== null && date >= startDate && date <= endDate;
+  });
+}
+
+function rowDate(row: JsonObject): string | null {
+  const value = row.date ?? row.start_time ?? row.startTimeLocal ?? row.startTimeGMT;
+  return typeof value === "string" && value.length >= 10 ? value.slice(0, 10) : null;
+}
+
+function eachDate(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const current = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 export function createDataReader(): GarminDataReader {

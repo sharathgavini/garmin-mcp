@@ -13,6 +13,10 @@ Core tools:
 - `get_latest_ride`
 - `get_latest_ride_summary`
 - `get_latest_ride_streams`
+- `get_activities_by_date_range`
+- `get_workouts_by_date_range`
+- `analyze_training_period`
+- `compare_training_periods`
 
 Sport categories are normalized to cycling, running, walking, badminton, strength, mobility, or other. Ride tools filter to cycling so a newer walk or mobility session does not hide the latest ride.
 
@@ -25,4 +29,9 @@ Use Garmin MCP and get my latest workout summary.
 Use Garmin MCP and get my latest ride streams.
 Use Garmin MCP and analyze my latest badminton session.
 Use Garmin MCP, sync now with activity streams, then analyze my latest workout.
+Use Garmin MCP and summarize my last 3 months of training from the archive.
+Use Garmin MCP and get all road biking activities between 2025-10-01 and 2026-06-14.
+Use Garmin MCP and compare my cycling volume in May vs June.
+Use Garmin MCP and show my HRV trend from October 2025 to today.
+Use Garmin MCP and analyze my training period from 2026-05-01 to 2026-06-14.
 ```

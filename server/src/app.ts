@@ -40,10 +40,10 @@ export function createApp(
   function registerTools(server: McpServer) {
     const toolDescriptions: Record<ToolName, string> = {
       get_today_summary: "Return the daily Garmin summary for one date.",
-      get_range_summary: "Return compact sleep, HRV, stress, body battery, activity, and recovery trends for a date range.",
-      get_recent_activities: "Return recent Garmin activity summaries. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
+      get_range_summary: "Return compact sleep, HRV, stress, body battery, activity, and recovery trends for a recent date range. Reads latest/recent data only. For historical ranges beyond latest coverage, use get_archive_range_summary.",
+      get_recent_activities: "Return recent Garmin activity summaries. Reads latest/recent data only. For arbitrary historical date ranges, use get_activities_by_date_range. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
       get_activity_detail: "Return one detailed Garmin activity summary. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
-      get_coach_context: "Return compact Garmin context optimized for LLM coaching.",
+      get_coach_context: "Return compact Garmin context optimized for recent coaching context. For long-range history, use archive tools.",
       get_sync_status: "Return the latest Garmin sync status written by the sync job, including running sync_now lock state when present.",
       get_latest_activity: "Return the latest synced Garmin activity detail. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
       sync_now: "Start an authenticated background Garmin sync that stores normalized data, raw payloads, and activity streams.",
@@ -56,6 +56,12 @@ export function createApp(
       get_latest_ride: "Return the newest Garmin cycling activity, not the newest activity overall, with stream availability.",
       get_latest_ride_summary: "Return summary fields for the newest Garmin cycling activity with stream availability and ride stream hint.",
       get_latest_ride_streams: "Returns full Garmin ride streams for deep cycling analysis including HR, cadence, speed, power if available, elevation, distance, and GPS if available. Use this instead of external services for detailed ride analysis.",
+      get_archive_range_summary: "Read partitioned Garmin archive data for an explicit date range and return coverage, missing-data warnings, activity volume, and health trend summaries. Use this for long-range questions such as last 3 months.",
+      get_activities_by_date_range: "Read Garmin archive activities for an explicit start_date/end_date with sport filters, optional details, and stream availability. Use this for arbitrary historical activity ranges.",
+      get_workouts_by_date_range: "Archive-aware workout range query over Garmin activities, with sport filters, optional details, and stream availability.",
+      get_health_metrics_by_date_range: "Read partitioned Garmin archive daily, sleep, HRV, stress, and body battery records for an explicit date range with coverage warnings.",
+      analyze_training_period: "Analyze an explicit Garmin archive training period with activity volume, sport distribution, health/recovery context, consistency, and optional stream metrics.",
+      compare_training_periods: "Compare two explicit Garmin archive periods for activity volume, sleep/HRV, stress/body battery, sport differences, recovery differences, and missing-data warnings.",
       health_check: "Return server status, latest data timestamp, and available date range."
     };
 
