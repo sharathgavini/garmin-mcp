@@ -12,6 +12,7 @@
     "stress": "latest/stress.json",
     "body_battery": "latest/body_battery.json",
     "activities": "latest/activities.json",
-    "coach_context_14d": "latest/coach_context_14d.json"
+    "coach_context_14d": "latest/coach_context_14d.json",
+    "latest_sync_status": "latest/latest_sync_status.json"
   }
 }

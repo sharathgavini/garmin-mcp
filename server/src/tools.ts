@@ -22,6 +22,8 @@ export const inputShapes = {
   get_coach_context: {
     days: daysSchema
   },
+  get_sync_status: {},
+  get_latest_activity: {},
   health_check: {}
 };
 
@@ -34,6 +36,8 @@ export const inputSchemas = {
   get_recent_activities: z.object(inputShapes.get_recent_activities),
   get_activity_detail: z.object(inputShapes.get_activity_detail),
   get_coach_context: z.object(inputShapes.get_coach_context),
+  get_sync_status: z.object(inputShapes.get_sync_status),
+  get_latest_activity: z.object(inputShapes.get_latest_activity),
   health_check: z.object(inputShapes.health_check)
 };
 
@@ -59,6 +63,21 @@ async function safeCollection(reader: GarminDataReader, collection: string): Pro
 }
 
 export function createToolHandlers(reader: GarminDataReader) {
+  async function readSyncStatus(): Promise<JsonObject> {
+    try {
+      return await reader.readJson<JsonObject>("latest/latest_sync_status.json");
+    } catch {
+      try {
+        return await reader.readJson<JsonObject>("latest_sync_status.json");
+      } catch {
+        return {
+          status: "unknown",
+          missing: true
+        };
+      }
+    }
+  }
+
   return {
     async get_today_summary(input: z.infer<typeof inputSchemas.get_today_summary>) {
       const date = input.date ?? todayIso();
@@ -168,12 +187,51 @@ export function createToolHandlers(reader: GarminDataReader) {
       });
     },
 
+    async get_sync_status() {
+      return ok(await readSyncStatus());
+    },
+
+    async get_latest_activity() {
+      const status = await readSyncStatus();
+      const latestActivityId = status.latest_activity_id;
+      if (typeof latestActivityId === "string" && latestActivityId.length > 0) {
+        const detail = await reader.readActivityDetail(latestActivityId);
+        return ok({
+          activity_id: latestActivityId,
+          detail,
+          missing: detail === null,
+          source: "latest_sync_status"
+        });
+      }
+
+      const activities = await safeCollection(reader, "activities");
+      const latestActivity = latestByDate(activities);
+      if (latestActivity?.id && typeof latestActivity.id === "string") {
+        const detail = await reader.readActivityDetail(latestActivity.id);
+        return ok({
+          activity_id: latestActivity.id,
+          detail: detail ?? latestActivity,
+          missing: false,
+          source: "activities"
+        });
+      }
+
+      return ok({
+        activity_id: null,
+        detail: null,
+        missing: true
+      });
+    },
+
     async health_check() {
       const manifest = await reader.readManifest();
+      const syncStatus = await readSyncStatus();
       return ok({
         status: "ok",
         latest_data_timestamp: manifest.generated_at ?? null,
-        available_date_range: manifest.date_range ?? null
+        available_date_range: manifest.date_range ?? null,
+        sync_status: syncStatus?.status ?? null,
+        latest_activity_id: syncStatus?.latest_activity_id ?? null
       });
     }
   };

@@ -55,4 +55,16 @@ describe("tool handlers", () => {
       streams_omitted: true
     });
   });
+
+  it("returns sync status", async () => {
+    const result = await handlers.get_sync_status();
+    assert.equal(result.structuredContent.status, "success");
+    assert.equal(result.structuredContent.latest_activity_id, "sample-walk-1");
+  });
+
+  it("returns latest activity using sync status", async () => {
+    const result = await handlers.get_latest_activity();
+    assert.equal(result.structuredContent.activity_id, "sample-walk-1");
+    assert.equal(result.structuredContent.missing, false);
+  });
 });

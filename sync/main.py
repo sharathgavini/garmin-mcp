@@ -31,35 +31,48 @@ def run_sync(
     force_login: bool = False,
     session_file: Path = DEFAULT_SESSION_FILE,
 ) -> None:
+    started_at = datetime.now(timezone.utc)
     days_to_fetch = _date_range(days)
-    client = login_or_restore(session_file=session_file, force_login=force_login)
+    try:
+        client = login_or_restore(session_file=session_file, force_login=force_login)
 
-    daily: list[dict[str, Any]] = []
-    sleep: list[dict[str, Any]] = []
-    hrv: list[dict[str, Any]] = []
-    stress: list[dict[str, Any]] = []
-    body_battery: list[dict[str, Any]] = []
+        daily: list[dict[str, Any]] = []
+        sleep: list[dict[str, Any]] = []
+        hrv: list[dict[str, Any]] = []
+        stress: list[dict[str, Any]] = []
+        body_battery: list[dict[str, Any]] = []
 
-    for day in days_to_fetch:
-        day_text = day.isoformat()
-        daily_raw = _safe_dict(client.get_stats, day_text)
-        readiness_raw = _safe_dict(getattr(client, "get_training_readiness", None), day_text)
-        daily.append(normalize_daily(daily_raw | {"trainingReadiness": readiness_raw}, day))
-        sleep.append(normalize_sleep(_safe_dict(client.get_sleep_data, day_text), day))
-        hrv.append(normalize_hrv(_safe_dict(client.get_hrv_data, day_text), day))
-        stress.append(normalize_stress(_safe_dict(client.get_stress_data, day_text), day))
-        body_battery.append(normalize_body_battery(_safe_list(client.get_body_battery, day_text, day_text), day))
+        for day in days_to_fetch:
+            day_text = day.isoformat()
+            daily_raw = _safe_dict(client.get_stats, day_text)
+            readiness_raw = _safe_dict(getattr(client, "get_training_readiness", None), day_text)
+            daily.append(normalize_daily(daily_raw | {"trainingReadiness": readiness_raw}, day))
+            sleep.append(normalize_sleep(_safe_dict(client.get_sleep_data, day_text), day))
+            hrv.append(normalize_hrv(_safe_dict(client.get_hrv_data, day_text), day))
+            stress.append(normalize_stress(_safe_dict(client.get_stress_data, day_text), day))
+            body_battery.append(normalize_body_battery(_safe_list(client.get_body_battery, day_text, day_text), day))
 
-    activities_raw = _safe_list(client.get_activities, 0, max(100, days * 4))
-    activities = [normalize_activity(item) for item in activities_raw if isinstance(item, dict)]
-    activities = [item for item in activities if item.get("id") and item.get("date", "") >= days_to_fetch[0].isoformat()]
-    activities.sort(key=lambda item: str(item.get("date", "")), reverse=True)
+        activities_raw = _safe_list(client.get_activities, 0, max(100, days * 4))
+        activities = [normalize_activity(item) for item in activities_raw if isinstance(item, dict)]
+        activities = [item for item in activities if item.get("id") and item.get("date", "") >= days_to_fetch[0].isoformat()]
+        activities.sort(key=lambda item: str(item.get("date", "")), reverse=True)
 
-    _write_outputs(output, daily, sleep, hrv, stress, body_battery, activities, client, days_to_fetch)
-    save_session(client, session_file)
+        _write_outputs(output, daily, sleep, hrv, stress, body_battery, activities, client, days_to_fetch, started_at)
+        save_session(client, session_file)
 
-    if upload_bucket:
-        upload_directory(upload_bucket, output)
+        if upload_bucket:
+            upload_directory(upload_bucket, output)
+    except Exception:
+        write_json(
+            output / "latest_sync_status.json",
+            _sync_status(
+                status="failed",
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+                activities=[],
+            ),
+        )
+        raise
 
 
 def _write_outputs(
@@ -72,6 +85,7 @@ def _write_outputs(
     activities: list[dict[str, Any]],
     client: Any,
     days_to_fetch: list[date],
+    started_at: datetime,
 ) -> None:
     write_json(output / "daily.json", daily)
     write_json(output / "sleep.json", sleep)
@@ -101,6 +115,15 @@ def _write_outputs(
             days=min(14, len(days_to_fetch)),
         ),
     )
+    write_json(
+        output / "latest_sync_status.json",
+        _sync_status(
+            status="success",
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+            activities=activities,
+        ),
+    )
     write_json(output / "manifest.json", _manifest(days_to_fetch))
 
 
@@ -117,7 +140,26 @@ def _manifest(days_to_fetch: list[date]) -> dict[str, Any]:
             "body_battery": "latest/body_battery.json",
             "activities": "latest/activities.json",
             "coach_context_14d": "latest/coach_context_14d.json",
+            "latest_sync_status": "latest/latest_sync_status.json",
         },
+    }
+
+
+def _sync_status(
+    *,
+    status: str,
+    started_at: datetime,
+    completed_at: datetime,
+    activities: list[dict[str, Any]],
+) -> dict[str, Any]:
+    latest_activity = activities[0] if activities else {}
+    return {
+        "status": status,
+        "started_at": started_at.isoformat(),
+        "completed_at": completed_at.isoformat(),
+        "activities_synced": len(activities),
+        "latest_activity_id": latest_activity.get("id"),
+        "latest_activity_date": latest_activity.get("date"),
     }
 
 

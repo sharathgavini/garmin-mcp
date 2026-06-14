@@ -61,6 +61,11 @@ def test_run_sync_writes_normalized_json(monkeypatch, tmp_path):
     assert daily[0]["steps"] == 1000
     assert daily[0]["training_readiness"] == 72
 
+    status = json.loads((tmp_path / "latest_sync_status.json").read_text())
+    assert status["status"] == "success"
+    assert status["activities_synced"] == 1
+    assert status["latest_activity_id"] == "123"
+
     detail = json.loads((tmp_path / "activity_details" / "123.json").read_text())
     assert detail["streams_omitted"] is True
     assert "activityType" not in detail

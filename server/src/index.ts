@@ -37,6 +37,8 @@ function registerTools(server: McpServer) {
     get_recent_activities: "Return recent activity summaries, capped at 30 days.",
     get_activity_detail: "Return one detailed activity summary without second-by-second streams.",
     get_coach_context: "Return compact Garmin context optimized for LLM coaching.",
+    get_sync_status: "Return the latest Garmin sync status written by the sync job.",
+    get_latest_activity: "Return the latest synced activity detail.",
     health_check: "Return server status, latest data timestamp, and available date range."
   };
 
