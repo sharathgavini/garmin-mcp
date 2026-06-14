@@ -65,12 +65,15 @@ export function createApp(
       get_latest_ride: "Return the newest Garmin cycling activity, not the newest activity overall, with stream availability.",
       get_latest_ride_summary: "Return summary fields for the newest Garmin cycling activity with stream availability and ride stream hint.",
       get_latest_ride_streams: "Returns full Garmin ride streams for deep cycling analysis including HR, cadence, speed, power if available, elevation, distance, and GPS if available. Use this instead of external services for detailed ride analysis.",
-      get_archive_range_summary: "Read partitioned Garmin archive data for an explicit date range and return coverage, missing-data warnings, activity volume, and health trend summaries. Use this for long-range questions such as last 3 months.",
-      get_activities_by_date_range: "Read Garmin archive activities for an explicit start_date/end_date with sport filters, optional details, and stream availability. Use this for arbitrary historical activity ranges.",
-      get_workouts_by_date_range: "Archive-aware workout range query over Garmin activities, with sport filters, optional details, and stream availability.",
-      get_health_metrics_by_date_range: "Read partitioned Garmin archive daily, sleep, HRV, stress, and body battery records for an explicit date range with coverage warnings.",
-      analyze_training_period: "Analyze an explicit Garmin archive training period with activity volume, sport distribution, health/recovery context, consistency, and optional stream metrics.",
-      compare_training_periods: "Compare two explicit Garmin archive periods for activity volume, sleep/HRV, stress/body battery, sport differences, recovery differences, and missing-data warnings.",
+      get_archive_range_summary: "Read partitioned Garmin archive data for a date range and return coverage, missing-data warnings, activity volume, and health trend summaries. Dates use YYYY-MM-DD. For single-day queries, provide only start_date; end_date is optional and defaults to start_date.",
+      get_activities_by_date_range: "Read Garmin archive activities for start_date/end_date with sport filters, optional details, and stream availability. Dates use YYYY-MM-DD. For single-day queries, provide only start_date; end_date is optional and defaults to start_date.",
+      get_workouts_by_date_range: "Archive-aware workout range query over Garmin activities, with sport filters, optional details, and stream availability. Dates use YYYY-MM-DD. For single-day queries, provide only start_date; end_date is optional and defaults to start_date.",
+      get_health_metrics_by_date_range: "Read partitioned Garmin archive daily, sleep, HRV, stress, and body battery records with coverage warnings. Dates use YYYY-MM-DD. For single-day queries, provide only start_date; end_date is optional and defaults to start_date.",
+      get_sleep_for_date: "Return normalized Garmin sleep for one date. Input date uses YYYY-MM-DD. Source defaults to auto and checks latest data first, then archive.",
+      get_hrv_for_date: "Return normalized Garmin HRV for one date. Input date uses YYYY-MM-DD. Source defaults to auto and checks latest data first, then archive. HRV readings are omitted unless include_readings is true.",
+      get_recovery_for_date: "Return one-date recovery context combining sleep, HRV, body battery, resting HR, stress, training readiness, recovery hours, and acute load where available. Input date uses YYYY-MM-DD.",
+      analyze_training_period: "Analyze a Garmin archive training period with activity volume, sport distribution, health/recovery context, consistency, and optional stream metrics. Dates use YYYY-MM-DD. For single-day queries, provide only start_date; end_date is optional and defaults to start_date.",
+      compare_training_periods: "Compare two Garmin archive periods for activity volume, sleep/HRV, stress/body battery, sport differences, recovery differences, and missing-data warnings. Dates use YYYY-MM-DD. Each period end date is optional and defaults to that period's start date.",
       health_check: "Return server status, latest data timestamp, and available date range."
     };
 

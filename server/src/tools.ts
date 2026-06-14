@@ -11,13 +11,14 @@ import type { GarminDataReader, JsonObject } from "./types.js";
 import { allActivities, activityId, analyze, latestWorkout, shapeStream, summarizeWorkout, type StreamSource } from "./workouts.js";
 
 const isoDateSchema = z.string().refine(isIsoDate, "Use YYYY-MM-DD.");
+const optionalIsoDateSchema = z.preprocess((value) => (value === null ? undefined : value), isoDateSchema.optional());
 const daysSchema = z.number().int().min(1).max(30).default(14);
 const workoutDaysSchema = z.number().int().min(1).max(90).default(30);
 const streamSourceSchema = z.enum(["latest", "archive", "auto"]).default("auto");
 const sportCategorySchema = z.enum(["cycling", "running", "walking", "badminton", "strength", "mobility", "other"]);
 const archiveRangeShape = {
   start_date: isoDateSchema,
-  end_date: isoDateSchema
+  end_date: optionalIsoDateSchema
 };
 const archiveActivityFilterShape = {
   ...archiveRangeShape,
@@ -112,6 +113,20 @@ export const inputShapes = {
     ...archiveRangeShape,
     metrics: z.array(z.enum(["daily", "sleep", "hrv", "stress", "body_battery"])).optional()
   },
+  get_sleep_for_date: {
+    date: isoDateSchema,
+    source: streamSourceSchema
+  },
+  get_hrv_for_date: {
+    date: isoDateSchema,
+    source: streamSourceSchema,
+    include_readings: z.boolean().default(false)
+  },
+  get_recovery_for_date: {
+    date: isoDateSchema,
+    source: streamSourceSchema,
+    include_readings: z.boolean().default(false)
+  },
   analyze_training_period: {
     ...archiveActivityFilterShape,
     analysis_focus: z.enum(["general", "cycling", "running", "badminton", "strength", "recovery", "injury_rehab", "sleep_hrv"]).default("general"),
@@ -119,9 +134,9 @@ export const inputShapes = {
   },
   compare_training_periods: {
     period_a_start: isoDateSchema,
-    period_a_end: isoDateSchema,
+    period_a_end: optionalIsoDateSchema,
     period_b_start: isoDateSchema,
-    period_b_end: isoDateSchema,
+    period_b_end: optionalIsoDateSchema,
     sport_categories: z.array(sportCategorySchema).optional(),
     metrics: z.array(z.enum(["daily", "sleep", "hrv", "stress", "body_battery", "activities"])).optional()
   },
@@ -150,15 +165,18 @@ export const inputSchemas = {
   get_latest_ride: z.object(inputShapes.get_latest_ride),
   get_latest_ride_summary: z.object(inputShapes.get_latest_ride_summary),
   get_latest_ride_streams: z.object(inputShapes.get_latest_ride_streams),
-  get_archive_range_summary: z.object(inputShapes.get_archive_range_summary).refine((input) => input.start_date <= input.end_date, "start_date must be on or before end_date."),
-  get_activities_by_date_range: z.object(inputShapes.get_activities_by_date_range).refine((input) => input.start_date <= input.end_date, "start_date must be on or before end_date."),
-  get_workouts_by_date_range: z.object(inputShapes.get_workouts_by_date_range).refine((input) => input.start_date <= input.end_date, "start_date must be on or before end_date."),
-  get_health_metrics_by_date_range: z.object(inputShapes.get_health_metrics_by_date_range).refine((input) => input.start_date <= input.end_date, "start_date must be on or before end_date."),
-  analyze_training_period: z.object(inputShapes.analyze_training_period).refine((input) => input.start_date <= input.end_date, "start_date must be on or before end_date."),
+  get_archive_range_summary: z.object(inputShapes.get_archive_range_summary).refine((input) => input.start_date <= (input.end_date ?? input.start_date), "start_date must be on or before end_date."),
+  get_activities_by_date_range: z.object(inputShapes.get_activities_by_date_range).refine((input) => input.start_date <= (input.end_date ?? input.start_date), "start_date must be on or before end_date."),
+  get_workouts_by_date_range: z.object(inputShapes.get_workouts_by_date_range).refine((input) => input.start_date <= (input.end_date ?? input.start_date), "start_date must be on or before end_date."),
+  get_health_metrics_by_date_range: z.object(inputShapes.get_health_metrics_by_date_range).refine((input) => input.start_date <= (input.end_date ?? input.start_date), "start_date must be on or before end_date."),
+  get_sleep_for_date: z.object(inputShapes.get_sleep_for_date),
+  get_hrv_for_date: z.object(inputShapes.get_hrv_for_date),
+  get_recovery_for_date: z.object(inputShapes.get_recovery_for_date),
+  analyze_training_period: z.object(inputShapes.analyze_training_period).refine((input) => input.start_date <= (input.end_date ?? input.start_date), "start_date must be on or before end_date."),
   compare_training_periods: z
     .object(inputShapes.compare_training_periods)
-    .refine((input) => input.period_a_start <= input.period_a_end, "period_a_start must be on or before period_a_end.")
-    .refine((input) => input.period_b_start <= input.period_b_end, "period_b_start must be on or before period_b_end."),
+    .refine((input) => input.period_a_start <= (input.period_a_end ?? input.period_a_start), "period_a_start must be on or before period_a_end.")
+    .refine((input) => input.period_b_start <= (input.period_b_end ?? input.period_b_start), "period_b_start must be on or before period_b_end."),
   health_check: z.object(inputShapes.health_check)
 };
 
@@ -168,6 +186,27 @@ function ok(data: JsonObject): { content: Array<{ type: "text"; text: string }>;
   return {
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
     structuredContent: data
+  };
+}
+
+type DateRangeInput = { start_date: string; end_date?: string; [key: string]: unknown };
+
+function requestedRange(input: DateRangeInput): { startDate: string; endDate: string; requested_start_date: string; requested_end_date: string } {
+  const endDate = input.end_date ?? input.start_date;
+  return {
+    startDate: input.start_date,
+    endDate,
+    requested_start_date: input.start_date,
+    requested_end_date: endDate
+  };
+}
+
+function compareRange(input: { period_a_start: string; period_a_end?: string; period_b_start: string; period_b_end?: string }) {
+  return {
+    periodAStart: input.period_a_start,
+    periodAEnd: input.period_a_end ?? input.period_a_start,
+    periodBStart: input.period_b_start,
+    periodBEnd: input.period_b_end ?? input.period_b_start
   };
 }
 
@@ -325,6 +364,83 @@ function recoveryAverage(summary: JsonObject, metric: string, key: string): unkn
   return averages?.[key] ?? null;
 }
 
+function firstNumber(row: JsonObject | null, keys: string[]): number | null {
+  if (!row) {
+    return null;
+  }
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function shapedSleep(date: string, source: string, row: JsonObject | null): JsonObject {
+  return {
+    date,
+    source,
+    found: row !== null,
+    data_available: row?.data_available ?? (row !== null ? true : false),
+    sleep_duration_seconds: firstNumber(row, ["total_sleep_seconds"]),
+    sleep_start_gmt: row?.sleep_start_gmt ?? null,
+    sleep_end_gmt: row?.sleep_end_gmt ?? null,
+    sleep_start_local: row?.sleep_start_local ?? null,
+    sleep_end_local: row?.sleep_end_local ?? null,
+    deep_sleep_seconds: firstNumber(row, ["deep_sleep_seconds"]),
+    light_sleep_seconds: firstNumber(row, ["light_sleep_seconds"]),
+    rem_sleep_seconds: firstNumber(row, ["rem_sleep_seconds"]),
+    awake_sleep_seconds: firstNumber(row, ["awake_sleep_seconds"]),
+    sleep_score: firstNumber(row, ["sleep_score", "overall_score"]),
+    sleep_score_qualifier: row?.sleep_score_qualifier ?? null,
+    avg_sleep_stress: firstNumber(row, ["avg_sleep_stress"]),
+    avg_heart_rate: firstNumber(row, ["avg_heart_rate"]),
+    lowest_spo2: firstNumber(row, ["lowest_spo2"]),
+    avg_spo2: firstNumber(row, ["avg_spo2"]),
+    avg_respiration: firstNumber(row, ["avg_respiration"]),
+    lowest_respiration: firstNumber(row, ["lowest_respiration"]),
+    highest_respiration: firstNumber(row, ["highest_respiration"]),
+    body_battery_change: firstNumber(row, ["body_battery_change"]),
+    nap_time_seconds: firstNumber(row, ["nap_time_seconds"]),
+    naps: row?.naps ?? [],
+    sleep_need: row?.sleep_need ?? null,
+    sleep_alignment: row?.sleep_alignment ?? null,
+    breathing_disruption_severity: row?.breathing_disruption_severity ?? null,
+    raw_payload_path: row?.raw_payload_path ?? null,
+    missing_fields: row?.missing_fields ?? [],
+    extraction_notes: row?.extraction_notes ?? []
+  };
+}
+
+function shapedHrv(date: string, source: string, row: JsonObject | null, includeReadings: boolean): JsonObject {
+  const readings = Array.isArray(row?.readings) ? row.readings : [];
+  const result: JsonObject = {
+    date,
+    source,
+    found: row !== null,
+    data_available: row?.data_available ?? (row !== null ? true : false),
+    avg_overnight_hrv: firstNumber(row, ["avg_overnight_hrv"]),
+    last_night_avg: firstNumber(row, ["last_night_avg"]),
+    last_night_5min_high: firstNumber(row, ["last_night_5min_high"]),
+    weekly_avg: firstNumber(row, ["weekly_avg"]),
+    hrv_status: row?.hrv_status ?? row?.status ?? null,
+    feedback_phrase: row?.feedback_phrase ?? null,
+    baseline_balanced_low: firstNumber(row, ["baseline_balanced_low"]),
+    baseline_balanced_upper: firstNumber(row, ["baseline_balanced_upper"]),
+    baseline_low_upper: firstNumber(row, ["baseline_low_upper"]),
+    reading_count: firstNumber(row, ["reading_count"]) ?? readings.length,
+    min_hrv: firstNumber(row, ["min_hrv"]),
+    max_hrv: firstNumber(row, ["max_hrv"]),
+    readings_included: includeReadings,
+    raw_payload_path: row?.raw_payload_path ?? null
+  };
+  if (includeReadings) {
+    result.readings = readings;
+  }
+  return result;
+}
+
 function streamExtractionNotice(stream: JsonObject | null): JsonObject {
   if (!stream) {
     return {};
@@ -382,6 +498,18 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     return reader.readActivityStream(activity_id, source);
   }
 
+  async function collectionRowForDate(collection: string, date: string, source: StreamSource = "auto") {
+    if (source === "latest" || source === "auto") {
+      const rows = await safeCollection(reader, collection);
+      const row = rows.find((item) => item.date === date) ?? null;
+      if (row || source === "latest") {
+        return { row, source: "latest" };
+      }
+    }
+    const result = await reader.readArchiveCollection(collection, date, date);
+    return { row: result.rows.find((item) => item.date === date) ?? null, source: "archive", coverage: result.coverage };
+  }
+
   // Shared latest-workout lookup for generic workout tools.
   async function latestMatching(input: z.infer<typeof inputSchemas.get_latest_workout>) {
     const activity = latestWorkout(await allActivities(reader), input);
@@ -420,7 +548,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
   }
 
   async function archiveActivities(input: z.infer<typeof inputSchemas.get_activities_by_date_range>) {
-    const result = await reader.readArchiveCollection("activities", input.start_date, input.end_date);
+    const { startDate, endDate } = requestedRange(input);
+    const result = await reader.readArchiveCollection("activities", startDate, endDate);
     const activities = filterActivities(result.rows, input).sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
     return { result, activities };
   }
@@ -664,9 +793,10 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_archive_range_summary(input: z.infer<typeof inputSchemas.get_archive_range_summary>) {
+      const range = requestedRange(input);
       const [{ result: activityResult, activities }, metrics] = await Promise.all([
         archiveActivities({ ...input, limit: 1000, include_details: false, include_stream_availability: false }),
-        archiveMetrics(input.start_date, input.end_date)
+        archiveMetrics(range.startDate, range.endDate)
       ]);
       const coverage = {
         activities: activityResult.coverage,
@@ -677,7 +807,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         body_battery: metrics.body_battery.coverage
       };
       return ok({
-        date_range: { start: input.start_date, end: input.end_date },
+        requested_start_date: range.requested_start_date,
+        requested_end_date: range.requested_end_date,
+        date_range: { start: range.startDate, end: range.endDate },
         dataset_coverage: coverage,
         missing_date_warnings: Object.fromEntries(Object.entries(coverage).map(([name, item]) => [name, item.warnings])),
         activity_counts_by_sport_category: countsBySport(activities),
@@ -687,7 +819,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         hrv_trend_summary: healthSummary(metrics.hrv.rows, "hrv"),
         stress_trend_summary: healthSummary(metrics.stress.rows, "stress"),
         body_battery_trend_summary: healthSummary(metrics.body_battery.rows, "body_battery"),
-        training_recovery_notes: filterByDateRange(metrics.daily.rows, input.start_date, input.end_date).map((row) => ({
+        training_recovery_notes: filterByDateRange(metrics.daily.rows, range.startDate, range.endDate).map((row) => ({
           date: row.date,
           training_readiness: row.training_readiness,
           acute_load: row.acute_load,
@@ -697,6 +829,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_activities_by_date_range(input: z.infer<typeof inputSchemas.get_activities_by_date_range>) {
+      const range = requestedRange(input);
       const { result, activities } = await archiveActivities(input);
       const limited = activities.slice(0, input.limit);
       const enriched = await Promise.all(
@@ -710,7 +843,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         })
       );
       return ok({
-        date_range: { start: input.start_date, end: input.end_date },
+        requested_start_date: range.requested_start_date,
+        requested_end_date: range.requested_end_date,
+        date_range: { start: range.startDate, end: range.endDate },
         total_matches: activities.length,
         returned: enriched.length,
         limit: input.limit,
@@ -720,6 +855,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_workouts_by_date_range(input: z.infer<typeof inputSchemas.get_workouts_by_date_range>) {
+      const range = requestedRange(input);
       const { result, activities } = await archiveActivities(input);
       const limited = activities.slice(0, input.limit);
       const enriched = await Promise.all(
@@ -733,7 +869,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         })
       );
       return ok({
-        date_range: { start: input.start_date, end: input.end_date },
+        requested_start_date: range.requested_start_date,
+        requested_end_date: range.requested_end_date,
+        date_range: { start: range.startDate, end: range.endDate },
         total_matches: activities.length,
         returned: enriched.length,
         limit: input.limit,
@@ -743,19 +881,65 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_health_metrics_by_date_range(input: z.infer<typeof inputSchemas.get_health_metrics_by_date_range>) {
+      const range = requestedRange(input);
       const metrics = input.metrics ?? ["daily", "sleep", "hrv", "stress", "body_battery"];
-      const results = await archiveMetrics(input.start_date, input.end_date, metrics);
+      const results = await archiveMetrics(range.startDate, range.endDate, metrics);
       return ok({
-        date_range: { start: input.start_date, end: input.end_date },
+        requested_start_date: range.requested_start_date,
+        requested_end_date: range.requested_end_date,
+        date_range: { start: range.startDate, end: range.endDate },
         metrics: Object.fromEntries(Object.entries(results).map(([name, result]) => [name, { records: result.rows, coverage: result.coverage }])),
         warnings: Object.fromEntries(Object.entries(results).map(([name, result]) => [name, result.coverage.warnings]))
       });
     },
 
+    async get_sleep_for_date(input: z.infer<typeof inputSchemas.get_sleep_for_date>) {
+      const result = await collectionRowForDate("sleep", input.date, input.source);
+      return ok(shapedSleep(input.date, result.source, result.row));
+    },
+
+    async get_hrv_for_date(input: z.infer<typeof inputSchemas.get_hrv_for_date>) {
+      const result = await collectionRowForDate("hrv", input.date, input.source);
+      return ok(shapedHrv(input.date, result.source, result.row, input.include_readings));
+    },
+
+    async get_recovery_for_date(input: z.infer<typeof inputSchemas.get_recovery_for_date>) {
+      const [sleepResult, hrvResult, dailyResult, stressResult, bodyBatteryResult] = await Promise.all([
+        collectionRowForDate("sleep", input.date, input.source),
+        collectionRowForDate("hrv", input.date, input.source),
+        collectionRowForDate("daily", input.date, input.source),
+        collectionRowForDate("stress", input.date, input.source),
+        collectionRowForDate("body_battery", input.date, input.source)
+      ]);
+      const daily = dailyResult.row;
+      const stress = stressResult.row;
+      const bodyBattery = bodyBatteryResult.row;
+      return ok({
+        date: input.date,
+        source: {
+          sleep: sleepResult.source,
+          hrv: hrvResult.source,
+          daily: dailyResult.source,
+          stress: stressResult.source,
+          body_battery: bodyBatteryResult.source
+        },
+        sleep: shapedSleep(input.date, sleepResult.source, sleepResult.row),
+        hrv: shapedHrv(input.date, hrvResult.source, hrvResult.row, input.include_readings),
+        body_battery: bodyBattery ?? null,
+        resting_hr: daily?.resting_hr ?? daily?.restingHeartRate ?? null,
+        training_readiness: daily?.training_readiness ?? null,
+        recovery_hours: daily?.recovery_hours ?? null,
+        acute_load: daily?.acute_load ?? null,
+        stress: stress ?? null,
+        avg_stress: stress?.avg_stress ?? stress?.stress_avg ?? stress?.stress ?? null
+      });
+    },
+
     async analyze_training_period(input: z.infer<typeof inputSchemas.analyze_training_period>) {
+      const range = requestedRange(input);
       const [{ result: activityResult, activities }, metrics] = await Promise.all([
         archiveActivities({ ...input, limit: 1000, include_details: false, include_stream_availability: false }),
-        archiveMetrics(input.start_date, input.end_date)
+        archiveMetrics(range.startDate, range.endDate)
       ]);
       let streamMetrics: JsonObject | null = null;
       if (input.include_stream_metrics) {
@@ -770,7 +954,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         };
       }
       return ok({
-        date_range: { start: input.start_date, end: input.end_date },
+        requested_start_date: range.requested_start_date,
+        requested_end_date: range.requested_end_date,
+        date_range: { start: range.startDate, end: range.endDate },
         analysis_focus: input.analysis_focus,
         ...periodSummary(activities, Object.fromEntries(Object.entries(metrics).map(([name, result]) => [name, result.rows]))),
         stream_metrics: streamMetrics,
@@ -782,6 +968,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async compare_training_periods(input: z.infer<typeof inputSchemas.compare_training_periods>) {
+      const ranges = compareRange(input);
       const metrics = input.metrics ?? ["daily", "sleep", "hrv", "stress", "body_battery", "activities"];
       async function readPeriod(start: string, end: string) {
         const activityData = await reader.readArchiveCollection("activities", start, end);
@@ -790,12 +977,16 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         const health = await archiveMetrics(start, end, healthMetricNames);
         return { activities, health, activityCoverage: activityData.coverage, summary: periodSummary(activities, Object.fromEntries(Object.entries(health).map(([name, result]) => [name, result.rows]))) };
       }
-      const [a, b] = await Promise.all([readPeriod(input.period_a_start, input.period_a_end), readPeriod(input.period_b_start, input.period_b_end)]);
+      const [a, b] = await Promise.all([readPeriod(ranges.periodAStart, ranges.periodAEnd), readPeriod(ranges.periodBStart, ranges.periodBEnd)]);
       const aVolume = a.summary.activity_volume as JsonObject;
       const bVolume = b.summary.activity_volume as JsonObject;
       return ok({
-        period_a: { start: input.period_a_start, end: input.period_a_end },
-        period_b: { start: input.period_b_start, end: input.period_b_end },
+        requested_period_a_start: ranges.periodAStart,
+        requested_period_a_end: ranges.periodAEnd,
+        requested_period_b_start: ranges.periodBStart,
+        requested_period_b_end: ranges.periodBEnd,
+        period_a: { start: ranges.periodAStart, end: ranges.periodAEnd },
+        period_b: { start: ranges.periodBStart, end: ranges.periodBEnd },
         activity_count_changes: delta(aVolume.activity_count, bVolume.activity_count),
         duration_changes: delta(aVolume.total_duration_seconds, bVolume.total_duration_seconds),
         distance_changes: delta(aVolume.total_distance_meters, bVolume.total_distance_meters),

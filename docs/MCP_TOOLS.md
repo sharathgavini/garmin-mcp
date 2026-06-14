@@ -119,25 +119,27 @@ Returns full Garmin streams for the newest cycling activity.
 
 ## Archive Tools
 
+Archive date inputs use `YYYY-MM-DD`. For single-day queries, callers may provide only `start_date`; `end_date` is optional and defaults to `start_date`. This also works when an MCP client sends `end_date: null`.
+
 ### `get_archive_range_summary`
 
-Reads partitioned archive data for an explicit range and returns activity volume, health trends, coverage, and missing-data warnings.
+Reads partitioned archive data for a range and returns activity volume, health trends, coverage, and missing-data warnings.
 
 Inputs:
 
 - `start_date`
-- `end_date`
+- `end_date` optional, defaults to `start_date`
 - `sport_categories` optional
 - `activity_types` optional
 
 ### `get_activities_by_date_range`
 
-Returns archive activities for an explicit date range.
+Returns archive activities for a date range.
 
 Inputs:
 
 - `start_date`
-- `end_date`
+- `end_date` optional, defaults to `start_date`
 - `sport_categories` optional
 - `activity_types` optional
 - `limit`
@@ -150,13 +152,42 @@ Archive-aware workout range query over Garmin activities.
 
 ### `get_health_metrics_by_date_range`
 
-Returns archive daily, sleep, HRV, stress, and body battery records for an explicit date range.
+Returns archive daily, sleep, HRV, stress, and body battery records for a date range.
 
 Inputs:
 
 - `start_date`
-- `end_date`
+- `end_date` optional, defaults to `start_date`
 - `metrics` optional
+
+### `get_sleep_for_date`
+
+Returns normalized Garmin sleep for one date from latest/archive/auto source.
+
+Inputs:
+
+- `date` as `YYYY-MM-DD`
+- `source` optional: `latest`, `archive`, or `auto`
+
+### `get_hrv_for_date`
+
+Returns normalized Garmin HRV for one date from latest/archive/auto source. Detailed readings are omitted by default to keep responses compact.
+
+Inputs:
+
+- `date` as `YYYY-MM-DD`
+- `source` optional: `latest`, `archive`, or `auto`
+- `include_readings` optional, default `false`
+
+### `get_recovery_for_date`
+
+Combines normalized sleep, HRV, body battery, resting HR, stress, training readiness, recovery hours, and acute load for one date where available.
+
+Inputs:
+
+- `date` as `YYYY-MM-DD`
+- `source` optional: `latest`, `archive`, or `auto`
+- `include_readings` optional, default `false`
 
 ### `analyze_training_period`
 
@@ -165,7 +196,7 @@ Analyzes an explicit archive training period.
 Inputs:
 
 - `start_date`
-- `end_date`
+- `end_date` optional, defaults to `start_date`
 - `sport_categories` optional
 - `analysis_focus`
 - `include_stream_metrics`
@@ -177,11 +208,18 @@ Compares two explicit archive periods.
 Inputs:
 
 - `period_a_start`
-- `period_a_end`
+- `period_a_end` optional, defaults to `period_a_start`
 - `period_b_start`
-- `period_b_end`
+- `period_b_end` optional, defaults to `period_b_start`
 - `sport_categories` optional
 - `metrics` optional
+
+## Claude Examples
+
+- Use Garmin MCP and get my sleep for 2026-06-14.
+- Use Garmin MCP and get my HRV for 2026-06-14.
+- Use Garmin MCP and get my recovery for 2026-06-14.
+- For date range tools, `end_date` is optional and defaults to `start_date`.
 
 ## Sync and Health
 

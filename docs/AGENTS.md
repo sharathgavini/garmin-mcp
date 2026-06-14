@@ -19,8 +19,19 @@ Use archive tools for long-range or explicit historical dates:
 - `get_activities_by_date_range`
 - `get_workouts_by_date_range`
 - `get_health_metrics_by_date_range`
+- `get_sleep_for_date`
+- `get_hrv_for_date`
+- `get_recovery_for_date`
 - `analyze_training_period`
 - `compare_training_periods`
+
+For single-day sleep, HRV, or recovery questions, prefer the dedicated single-date tools:
+
+- "Use Garmin MCP and get my sleep for 2026-06-14."
+- "Use Garmin MCP and get my HRV for 2026-06-14."
+- "Use Garmin MCP and get my recovery for 2026-06-14."
+
+For date range tools, `end_date` is optional and defaults to `start_date`. Some clients send `end_date: null` for a single day; this is accepted.
 
 Use stream tools for detailed workout analysis:
 

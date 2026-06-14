@@ -37,12 +37,56 @@ async function createArchiveFixture() {
     { id: "ride-jun", type: "road biking", date: "2026-06-14", distance_meters: 42000, duration_seconds: 6600, avg_hr: 146 }
   ]);
   await writePartition("daily", "2026", "05", [
-    { date: "2026-05-01", training_readiness: 72, acute_load: 340 },
+    { date: "2026-05-01", training_readiness: 72, acute_load: 340, resting_hr: 52, recovery_hours: 18 },
     { date: "2026-05-02", training_readiness: 68, acute_load: 360 }
   ]);
   await writePartition("daily", "2026", "06", [{ date: "2026-06-01", training_readiness: 74, acute_load: 380 }]);
-  await writePartition("sleep", "2026", "05", [{ date: "2026-05-01", sleep_score: 82 }]);
-  await writePartition("hrv", "2026", "05", [{ date: "2026-05-01", hrv: 48 }]);
+  await writePartition("sleep", "2026", "05", [
+    {
+      date: "2026-05-01",
+      data_available: true,
+      sleep_start_gmt: "2026-04-30T18:10:00Z",
+      sleep_end_gmt: "2026-05-01T01:40:00Z",
+      sleep_start_local: "2026-04-30T23:40:00",
+      sleep_end_local: "2026-05-01T07:10:00",
+      total_sleep_seconds: 27000,
+      deep_sleep_seconds: 5400,
+      light_sleep_seconds: 14400,
+      rem_sleep_seconds: 5400,
+      awake_sleep_seconds: 1800,
+      sleep_score: 82,
+      avg_sleep_stress: 19,
+      avg_heart_rate: 51,
+      avg_spo2: 97,
+      avg_respiration: 14.2,
+      body_battery_change: 62,
+      naps: [{ start_time_local: "2026-05-01T14:00:00", duration_seconds: 1200 }],
+      sleep_need: { baseline_seconds: 28800 },
+      sleep_alignment: { status: "aligned" },
+      raw_payload_path: "raw/sleep/2026-05-01.json"
+    }
+  ]);
+  await writePartition("hrv", "2026", "05", [
+    {
+      date: "2026-05-01",
+      data_available: true,
+      avg_overnight_hrv: 49,
+      last_night_avg: 48,
+      last_night_5min_high: 68,
+      weekly_avg: 51,
+      hrv_status: "balanced",
+      baseline_balanced_low: 42,
+      baseline_balanced_upper: 65,
+      reading_count: 2,
+      min_hrv: 43,
+      max_hrv: 68,
+      readings: [
+        { hrv_value: 43, reading_time_gmt: "2026-04-30T20:00:00Z", reading_time_local: "2026-05-01T01:30:00" },
+        { hrv_value: 68, reading_time_gmt: "2026-04-30T22:00:00Z", reading_time_local: "2026-05-01T03:30:00" }
+      ],
+      raw_payload_path: "raw/hrv/2026-05-01.json"
+    }
+  ]);
   await writePartition("stress", "2026", "05", [{ date: "2026-05-01", avg_stress: 31 }]);
   await writePartition("body_battery", "2026", "05", [{ date: "2026-05-01", body_battery_high: 78 }]);
   await mkdir(path.join(archive, "activity_streams"), { recursive: true });
@@ -71,6 +115,33 @@ describe("input validation", () => {
   it("rejects range summaries over 30 days", () => {
     assert.throws(() =>
       inputSchemas.get_range_summary.parse({ start_date: "2026-05-01", end_date: "2026-06-13" })
+    );
+  });
+
+  it("allows null end_date on archive range tools and defaults in handlers", () => {
+    const parsed = inputSchemas.get_health_metrics_by_date_range.parse({
+      start_date: "2026-05-01",
+      end_date: null,
+      metrics: ["sleep"]
+    });
+    assert.equal(parsed.start_date, "2026-05-01");
+    assert.equal(parsed.end_date, undefined);
+  });
+
+  it("allows omitted end_date on archive range tools", () => {
+    const parsed = inputSchemas.get_activities_by_date_range.parse({
+      start_date: "2026-05-01"
+    });
+    assert.equal(parsed.start_date, "2026-05-01");
+    assert.equal(parsed.end_date, undefined);
+  });
+
+  it("still rejects invalid archive dates", () => {
+    assert.throws(() =>
+      inputSchemas.get_health_metrics_by_date_range.parse({
+        start_date: "2026/05/01",
+        end_date: null
+      })
     );
   });
 });
@@ -274,6 +345,74 @@ describe("tool handlers", () => {
     assert.equal(metrics.daily.records.length, 3);
     assert.equal(metrics.hrv.records.length, 1);
     assert.ok(metrics.hrv.coverage.warnings.length > 0);
+  });
+
+  it("gets single-day health metrics when end_date is null", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const parsed = inputSchemas.get_health_metrics_by_date_range.parse({
+      start_date: "2026-05-01",
+      end_date: null,
+      metrics: ["sleep", "hrv"]
+    });
+    const result = await archiveHandlers.get_health_metrics_by_date_range(parsed);
+    assert.equal(result.structuredContent.requested_start_date, "2026-05-01");
+    assert.equal(result.structuredContent.requested_end_date, "2026-05-01");
+    const metrics = result.structuredContent.metrics as Record<string, { records: Array<Record<string, unknown>> }>;
+    assert.equal(metrics.sleep.records[0].total_sleep_seconds, 27000);
+    assert.equal(metrics.hrv.records[0].last_night_avg, 48);
+  });
+
+  it("gets normalized sleep for one date", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_sleep_for_date({
+      date: "2026-05-01",
+      source: "archive"
+    });
+    assert.equal(result.structuredContent.found, true);
+    assert.equal(result.structuredContent.sleep_duration_seconds, 27000);
+    assert.equal(result.structuredContent.deep_sleep_seconds, 5400);
+    assert.equal(result.structuredContent.sleep_score, 82);
+    assert.equal(result.structuredContent.avg_spo2, 97);
+    assert.equal(result.structuredContent.body_battery_change, 62);
+  });
+
+  it("gets normalized HRV for one date and keeps readings optional", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_hrv_for_date({
+      date: "2026-05-01",
+      source: "archive",
+      include_readings: false
+    });
+    assert.equal(result.structuredContent.found, true);
+    assert.equal(result.structuredContent.last_night_avg, 48);
+    assert.equal(result.structuredContent.hrv_status, "balanced");
+    assert.equal(result.structuredContent.reading_count, 2);
+    assert.equal("readings" in result.structuredContent, false);
+
+    const withReadings = await archiveHandlers.get_hrv_for_date({
+      date: "2026-05-01",
+      source: "archive",
+      include_readings: true
+    });
+    assert.equal((withReadings.structuredContent.readings as unknown[]).length, 2);
+  });
+
+  it("combines recovery signals for one date", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_recovery_for_date({
+      date: "2026-05-01",
+      source: "archive",
+      include_readings: false
+    });
+    assert.equal((result.structuredContent.sleep as Record<string, unknown>).sleep_score, 82);
+    assert.equal((result.structuredContent.hrv as Record<string, unknown>).last_night_avg, 48);
+    assert.equal(result.structuredContent.resting_hr, 52);
+    assert.equal(result.structuredContent.avg_stress, 31);
+    assert.equal((result.structuredContent.body_battery as Record<string, unknown>).body_battery_high, 78);
   });
 
   it("summarizes and compares archive training periods", async () => {
