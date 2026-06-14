@@ -14,6 +14,9 @@ services:
       GARMIN_DATA_MODE: local
       GARMIN_DATA_DIR: ${GARMIN_DATA_DIR:-/app/data/latest}
       GARMIN_SESSION_FILE: /app/secrets/.garmin-session.enc
+      OAUTH_ISSUER: ${OAUTH_ISSUER:-https://garmin.sharathgavini.com}
+      OAUTH_SECRETS_DIR: /app/secrets
+      OAUTH_TOKEN_TTL_SECONDS: ${OAUTH_TOKEN_TTL_SECONDS:-2592000}
       SYNC_DAYS: "30"
       RUN_INITIAL_SYNC: "false"
     volumes:

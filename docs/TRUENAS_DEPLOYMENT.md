@@ -56,6 +56,9 @@ MCP_BEARER_TOKEN=...
 GARMIN_DATA_MODE=local
 GARMIN_DATA_DIR=/app/data/latest
 GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc
+OAUTH_ISSUER=https://garmin.sharathgavini.com
+OAUTH_ADMIN_PASSWORD=...
+OAUTH_TOKEN_TTL_SECONDS=2592000
 TZ=Asia/Kolkata
 ```
 
@@ -90,6 +93,9 @@ MCP_BEARER_TOKEN=...
 GARMIN_DATA_MODE=local
 GARMIN_DATA_DIR=/app/data/latest
 GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc
+OAUTH_ISSUER=https://garmin.sharathgavini.com
+OAUTH_ADMIN_PASSWORD=...
+OAUTH_TOKEN_TTL_SECONDS=2592000
 TZ=Asia/Kolkata
 ```
 
@@ -110,6 +116,12 @@ Check health:
 
 ```bash
 curl http://localhost:3000/healthz
+```
+
+Check OAuth metadata:
+
+```bash
+curl https://garmin.sharathgavini.com/.well-known/oauth-authorization-server
 ```
 
 Run a manual sync:
@@ -240,6 +252,18 @@ For self-hosting, a future `sync_now` should use one of these protected patterns
 - A queue/file signal consumed by the scheduled sync process.
 
 The existing `latest_sync_status.json`, `get_sync_status`, and `get_latest_activity` tools are already the polling/read side of that future flow.
+
+## OAuth Remote MCP Auth
+
+ChatGPT and Claude remote connectors may expect an OAuth sign-in flow instead of a manually configured bearer token. The server supports a minimal single-user OAuth flow for remote MCP client authentication while preserving `MCP_BEARER_TOKEN`.
+
+OAuth state is stored under `/app/secrets`:
+
+- `oauth-clients.json`
+- `oauth-codes.json`
+- `oauth-tokens.json`
+
+See [OAUTH_SETUP.md](OAUTH_SETUP.md) for registration, metadata, and token rotation details.
 
 ## Troubleshooting
 

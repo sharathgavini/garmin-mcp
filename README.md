@@ -30,3 +30,5 @@ The local server exposes:
 See [docs/setup.md](docs/setup.md) and [docs/deployment.md](docs/deployment.md).
 
 For TrueNAS/self-hosted deployment behind Cloudflare Tunnel, see [docs/TRUENAS_DEPLOYMENT.md](docs/TRUENAS_DEPLOYMENT.md).
+
+For ChatGPT/Claude remote connector OAuth setup, see [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md).
