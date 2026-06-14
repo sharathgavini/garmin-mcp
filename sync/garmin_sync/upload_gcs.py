@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Compatibility wrapper for the shared GCS directory uploader."""
+
 from pathlib import Path
 
 from sync.gcs_upload import upload_directory_to_gcs

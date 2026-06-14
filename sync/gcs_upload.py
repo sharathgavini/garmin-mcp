@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Upload normalized sync output to Google Cloud Storage."""
+
 from pathlib import Path
 
 from google.cloud import storage
@@ -30,6 +32,7 @@ def upload_directory_to_gcs(
     *,
     dry_run: bool = False,
 ) -> list[tuple[Path, str]]:
+    # Dry-run mode validates path mapping without requiring local GCP credentials.
     if not bucket and not dry_run:
         raise ValueError("GCS_BUCKET is required for upload.")
 
@@ -46,6 +49,7 @@ def upload_directory_to_gcs(
 
 
 def json_upload_mappings(local_dir: Path, prefix: str = "latest") -> list[tuple[Path, str]]:
+    # Only upload normalized JSON outputs; secrets, logs, sessions, and raw payloads stay out.
     clean_prefix = prefix.strip("/")
     mappings: list[tuple[Path, str]] = []
     for path in sorted(local_dir.rglob("*.json")):

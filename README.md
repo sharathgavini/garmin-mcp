@@ -1,21 +1,41 @@
 # Garmin MCP
 
-Remote MCP server for ChatGPT access to prepared Garmin Connect data.
+Garmin MCP is a self-hostable Model Context Protocol server that lets ChatGPT, Claude, and other MCP clients query your Garmin Connect data.
 
-This project keeps Garmin login/session material out of the MCP server. A scheduled GitHub Actions sync prepares compact JSON files, uploads them to Google Cloud Storage, and a Cloud Run MCP server reads only those prepared files.
+The project has two main parts:
+
+- Python sync jobs fetch Garmin data, preserve raw payloads, normalize JSON, and maintain latest/archive datasets.
+- A TypeScript MCP HTTP server reads those prepared JSON files and exposes tools for health summaries, activity streams, workout analysis, historical archive queries, OAuth, and sync triggering.
+
+## Start Here
+
+If you are new to this project, read these in order:
+
+1. [Getting Started](docs/GETTING_STARTED.md)
+2. [Architecture](docs/ARCHITECTURE.md)
+3. [Design](docs/DESIGN.md)
+4. [MCP Tools](docs/MCP_TOOLS.md)
+5. [Agent Guide](docs/AGENTS.md)
+6. [TrueNAS Deployment](docs/TRUENAS_DEPLOYMENT.md)
 
 ## Repository Layout
 
-- `sync/` - Python sync skeleton, normalizers, and GCS uploader.
-- `server/` - TypeScript MCP server, tools, data readers, and Dockerfile.
-- `.github/workflows/` - daily sync and Cloud Run deployment workflows.
-- `docs/` - setup, deployment, ChatGPT connector, threat model, and troubleshooting.
-- `sample-data/` - redacted JSON fixtures for local development and tests.
-- `tests/` - Python normalizer tests.
+- `sync/` - Python Garmin sync, backfill, session encryption, normalizers, raw payload and stream storage, and GCS upload helpers.
+- `server/` - TypeScript MCP server, OAuth routes, data readers, tool handlers, workout analysis, and Dockerfile.
+- `docker/` - self-hosted container entrypoint and scheduled sync scripts.
+- `.github/workflows/` - GitHub Actions sync/deploy workflows.
+- `docs/` - setup, design, architecture, tool catalog, deployment, OAuth, troubleshooting, and agent-facing notes.
+- `sample-data/` - redacted JSON fixtures for local development and MCP tests.
+- `tests/` - Python tests for sync, backfill, crypto, GCS upload, normalizers, and stream extraction.
 
-## Quick Start
+## Local Quick Start
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r sync/requirements.txt
+pip install -r requirements-dev.txt
+
 cd server
 npm install
 npm test
@@ -27,8 +47,43 @@ The local server exposes:
 - `GET /healthz`
 - `POST /mcp` with `Authorization: Bearer dev-token`
 
-See [docs/setup.md](docs/setup.md) and [docs/deployment.md](docs/deployment.md).
+## Common Commands
 
-For TrueNAS/self-hosted deployment behind Cloudflare Tunnel, see [docs/TRUENAS_DEPLOYMENT.md](docs/TRUENAS_DEPLOYMENT.md).
+Run Python tests:
 
-For ChatGPT/Claude remote connector OAuth setup, see [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md).
+```bash
+.venv/bin/python -m pytest tests
+```
+
+Run server tests:
+
+```bash
+cd server
+npm test
+```
+
+Run latest sync locally:
+
+```bash
+python -m sync.main --days 30 --output ./local-data/latest --include-raw true --activity-details true --activity-streams true
+```
+
+Run historical backfill locally:
+
+```bash
+python -m sync.backfill --start-date 2025-10-01 --end-date 2026-06-14 --output ./local-data/archive --include-raw true --activity-details true --activity-streams true
+```
+
+## Supported Deployment Modes
+
+- Local development with `sample-data/`
+- TrueNAS self-hosted container behind Cloudflare Tunnel
+- Cloud Run plus GCS
+- GitHub Actions scheduled sync
+
+## Security Notes
+
+- Do not commit `.env`, Garmin credentials, OAuth tokens, bearer tokens, or encrypted Garmin session files.
+- Keep `/app/secrets` persistent and private.
+- The MCP server reads prepared JSON; Garmin login happens in the sync process.
+- `sync_now` is exposed only as an authenticated MCP tool, not as an unauthenticated HTTP endpoint.

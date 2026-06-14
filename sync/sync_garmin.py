@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Compatibility wrapper around sync.main for older workflow entrypoints."""
+
 import argparse
 import os
 import sys

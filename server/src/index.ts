@@ -1,3 +1,4 @@
+// Process entrypoint: build the Express/MCP app and bind it to PORT.
 import { createApp } from "./app.js";
 
 const port = Number(process.env.PORT ?? 3000);

@@ -1,3 +1,5 @@
+# Cloud Run/GCS server image. This image serves prepared JSON and does not
+# include the Python Garmin sync runtime.
 FROM node:20-slim AS build
 WORKDIR /app
 COPY package*.json ./

@@ -1,3 +1,4 @@
+// Small UTC date helpers shared by MCP tools and tests.
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function isIsoDate(value: string): boolean {

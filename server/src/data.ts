@@ -1,3 +1,7 @@
+// Data readers hide storage details from MCP tools.
+//
+// LocalDataReader supports latest files plus partitioned archive files. GcsDataReader
+// supports latest GCS reads for Cloud Run/GCS mode.
 import { Storage } from "@google-cloud/storage";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -37,6 +41,7 @@ export class LocalDataReader implements GarminDataReader {
     const loaded: string[] = [];
     const missing: string[] = [];
 
+    // Only read month partitions that intersect the requested range.
     for (const partition of requested) {
       const relative = path.join(name, `year=${partition.year}`, `month=${partition.month}`, file);
       const fullPath = path.join(this.archiveDir(), relative);
@@ -55,6 +60,7 @@ export class LocalDataReader implements GarminDataReader {
       }
     }
 
+    // Filter exact dates after loading because monthly partitions can contain extra days.
     const filtered = filterRowsByDate(rows, startDate, endDate);
     const dates = new Set(filtered.map((row) => rowDate(row)).filter((date): date is string => date !== null));
     const availableDates = [...dates].sort();
@@ -82,6 +88,7 @@ export class LocalDataReader implements GarminDataReader {
   }
 
   async readJson<T>(relativePath: string): Promise<T> {
+    // Some older manifests include a latest/ prefix even when baseDir already points at latest.
     const safePath = relativePath.replace(/^latest\//, "");
     const fullPath = path.join(this.baseDir, safePath);
     const raw = await fs.readFile(fullPath, "utf8");
@@ -159,6 +166,7 @@ export class LocalDataReader implements GarminDataReader {
   }
 
   private archiveDir(): string {
+    // In self-hosted mode GARMIN_DATA_DIR points at /app/data/latest; archive is its sibling.
     return path.resolve(this.baseDir, "..", "archive");
   }
 }
@@ -185,6 +193,7 @@ export class GcsDataReader implements GarminDataReader {
   }
 
   async readArchiveCollection(name: string, startDate: string, endDate: string): Promise<ArchiveCollectionResult> {
+    // Archive range reads are currently local-only because archive partitions are a TrueNAS-first feature.
     return {
       collection: name,
       start_date: startDate,
@@ -236,6 +245,7 @@ export class GcsDataReader implements GarminDataReader {
 }
 
 function monthPartitions(startDate: string, endDate: string): Array<{ year: string; month: string }> {
+  // Partition names mirror the backfill writer: year=YYYY/month=MM.
   const start = new Date(`${startDate.slice(0, 7)}-01T00:00:00Z`);
   const end = new Date(`${endDate.slice(0, 7)}-01T00:00:00Z`);
   const partitions: Array<{ year: string; month: string }> = [];

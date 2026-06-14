@@ -1,3 +1,8 @@
+// Authenticated background sync launcher used by the sync_now MCP tool.
+//
+// This module creates a lock file, writes running status, starts Python sync in
+// the background, and cleans the lock on exit. It deliberately does not expose
+// any unauthenticated HTTP endpoint.
 import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -20,6 +25,7 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
   const dataDir = options.dataDir ?? process.env.GARMIN_DATA_DIR ?? "/app/data/latest";
   const lockPath = path.join(dataDir, "sync.lock");
   const statusPath = path.join(dataDir, "latest_sync_status.json");
+  // Existing lock means another sync is already running.
   const existing = await readJson(lockPath);
   if (existing?.job_id) {
     return {
@@ -40,6 +46,7 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
     "utf8"
   );
 
+  // Keep arguments explicit so scheduled sync and manual sync behave the same way.
   const args = [
     "-m",
     "sync.main",
@@ -62,6 +69,7 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
     env: process.env,
     stdio: "ignore"
   });
+  // Background completion updates status without blocking the MCP response.
   child.once("exit", async (code) => {
     const completedAt = new Date().toISOString();
     try {

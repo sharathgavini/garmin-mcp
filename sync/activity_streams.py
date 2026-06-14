@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Tolerant Garmin activity stream extraction.
+
+Garmin payload shapes vary by activity type and library version. This module
+tries multiple endpoints, searches for stream-like sample arrays, and preserves
+availability metadata instead of failing when fields are missing.
+"""
+
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -21,6 +28,7 @@ STREAM_FIELDS = [
 
 
 def fetch_activity_payloads(client: Any, activity_id: str) -> dict[str, Any]:
+    # Method names are optional across garminconnect versions, so each call is best-effort.
     payloads: dict[str, Any] = {}
     calls: dict[str, tuple[str, tuple[Any, ...]]] = {
         "activity": ("get_activity", (activity_id,)),
@@ -42,6 +50,7 @@ def fetch_activity_payloads(client: Any, activity_id: str) -> dict[str, Any]:
 
 
 def normalize_activity_stream(activity_id: str, payloads: dict[str, Any]) -> dict[str, Any]:
+    # Prefer detailed metrics when available, but fall back to the activity payload.
     detail = payloads.get("activity_details") or payloads.get("activity") or {}
     samples = extract_samples(detail)
     laps = first_present(payloads.get("splits"), payloads.get("typed_splits"), payloads.get("split_summaries"), [])

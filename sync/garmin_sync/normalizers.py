@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+"""Garmin payload normalizers.
+
+Normalizers convert varied Garmin API payloads into stable MCP-friendly JSON.
+They omit missing values instead of inventing data.
+"""
+
 from datetime import date
 from typing import Any
 
 
 def pick(source: dict[str, Any], *keys: str) -> Any:
+    # Garmin field names change across endpoints; first present value wins.
     for key in keys:
         if key in source and source[key] is not None:
             return source[key]
@@ -159,6 +166,7 @@ def _normalize_lap(raw: dict[str, Any], lap_number: int) -> dict[str, Any]:
 
 
 def compact(value: dict[str, Any]) -> dict[str, Any]:
+    # Keep normalized JSON small while preserving meaningful false/zero values.
     return {key: item for key, item in value.items() if item is not None and item != ""}
 
 

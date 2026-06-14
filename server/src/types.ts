@@ -1,3 +1,4 @@
+// Shared TypeScript types for data readers and tool helpers.
 export type JsonObject = Record<string, unknown>;
 
 export interface Manifest {

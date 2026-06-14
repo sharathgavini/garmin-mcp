@@ -1,3 +1,8 @@
+// Minimal single-user OAuth implementation for remote MCP clients.
+//
+// The server still supports a static bearer token, but some clients expect OAuth
+// metadata and an authorization-code flow. This file keeps OAuth state in JSON
+// files under the configured secrets directory.
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";

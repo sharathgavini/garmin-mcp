@@ -1,3 +1,7 @@
+// Workout helpers shared by MCP tools.
+//
+// This module keeps sport filtering, stream shaping, and lightweight analysis
+// outside the HTTP/MCP layer so the handlers remain mostly orchestration.
 import { classifySport, type SportCategory } from "./sports.js";
 import type { GarminDataReader, JsonObject } from "./types.js";
 
@@ -62,12 +66,14 @@ export function matchesWorkout(activity: JsonObject, filter: WorkoutFilter): boo
   return withinDays(activity, filter.days ?? 30);
 }
 
+// Latest matching workout is sorted by Garmin activity date, not by file order.
 export function latestWorkout(activities: JsonObject[], filter: WorkoutFilter = {}): JsonObject | null {
   const matches = activities.filter((activity) => activityId(activity) && matchesWorkout(activity, filter));
   matches.sort((a, b) => activityDate(b).localeCompare(activityDate(a)));
   return matches[0] ?? null;
 }
 
+// Summary fields are intentionally nullable because Garmin does not provide every metric for every sport.
 export function summarizeWorkout(activity: JsonObject | null, stream: JsonObject | null = null): JsonObject {
   if (!activity) {
     return {
@@ -116,6 +122,7 @@ export function summarizeWorkout(activity: JsonObject | null, stream: JsonObject
   };
 }
 
+// Field filtering preserves timestamp/offset so callers can still align samples.
 export function selectStreamFields(stream: JsonObject, fields?: string[]): JsonObject {
   if (!fields || fields.length === 0) {
     return stream;
@@ -133,6 +140,7 @@ export function selectStreamFields(stream: JsonObject, fields?: string[]): JsonO
   return { ...stream, fields: available, samples };
 }
 
+// Downsampling is opt-in; full streams are returned by default.
 export function downsampleStream(stream: JsonObject, maxPoints?: number | null): JsonObject {
   if (!maxPoints || maxPoints < 1 || !Array.isArray(stream.samples) || stream.samples.length <= maxPoints) {
     return stream;
@@ -148,6 +156,7 @@ export function shapeStream(stream: JsonObject, options: { fields?: string[]; do
   return options.downsample ? downsampleStream(filtered, options.max_points ?? null) : filtered;
 }
 
+// Analysis output is structured for an AI client to interpret, not as final medical/training advice.
 export function analyze(activity: JsonObject | null, stream: JsonObject | null, includeStreams: boolean): JsonObject {
   const summary = summarizeWorkout(activity, stream);
   const samples = Array.isArray(stream?.samples) ? (stream.samples as JsonObject[]) : [];

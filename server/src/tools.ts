@@ -1,3 +1,8 @@
+// MCP tool schemas and handlers.
+//
+// Keep this file as the source of truth for tool inputs/outputs. Data access,
+// stream shaping, and workout calculations are delegated to helper modules
+// where possible, but orchestration lives here.
 import { z } from "zod";
 import { daysAgoIso, filterByDateRange, inclusiveDays, isIsoDate, latestByDate, todayIso } from "./date.js";
 import { classifySport } from "./sports.js";
@@ -123,6 +128,7 @@ export const inputShapes = {
   health_check: {}
 };
 
+// These Zod schemas validate everything that enters through MCP before handler logic runs.
 export const inputSchemas = {
   get_today_summary: z.object(inputShapes.get_today_summary),
   get_range_summary: z
@@ -165,6 +171,7 @@ function ok(data: JsonObject): { content: Array<{ type: "text"; text: string }>;
   };
 }
 
+// Latest readers may not have every collection during first setup, so latest tools degrade with warnings.
 function missingCollection(collection: string): JsonObject[] {
   return [{ warning: `${collection} data is unavailable` }];
 }
@@ -177,6 +184,7 @@ async function safeCollection(reader: GarminDataReader, collection: string): Pro
   }
 }
 
+// Activity range filters are shared by archive tools and keep sport/category matching consistent.
 function filterActivities(rows: JsonObject[], input: { sport_categories?: string[]; activity_types?: string[] }): JsonObject[] {
   const types = (input.activity_types ?? []).map((item) => item.toLowerCase());
   return rows.filter((activity) => {
@@ -192,6 +200,7 @@ function filterActivities(rows: JsonObject[], input: { sport_categories?: string
   });
 }
 
+// Numeric summary helpers intentionally accept multiple key names because Garmin payloads vary.
 function sumNumber(rows: JsonObject[], keys: string[]): number {
   return rows.reduce((sum, row) => {
     for (const key of keys) {
@@ -227,6 +236,7 @@ function countsBySport(rows: JsonObject[]): Record<string, number> {
   return counts;
 }
 
+// Build the compact activity shape returned by range tools without embedding full streams.
 function compactActivity(activity: JsonObject, detail: JsonObject | null, stream: JsonObject | null): JsonObject {
   return {
     id: activity.id ?? activity.activity_id ?? activity.activityId,
@@ -244,6 +254,7 @@ function compactActivity(activity: JsonObject, detail: JsonObject | null, stream
   };
 }
 
+// Health summaries return averages opportunistically; missing metrics remain null instead of being invented.
 function healthSummary(rows: JsonObject[], metric: string): JsonObject {
   return {
     metric,
@@ -259,6 +270,7 @@ function healthSummary(rows: JsonObject[], metric: string): JsonObject {
   };
 }
 
+// Period summaries are deliberately structured for LLM interpretation rather than final coaching advice.
 function periodSummary(activities: JsonObject[], metrics: Record<string, JsonObject[]>): JsonObject {
   const totalDuration = sumNumber(activities, ["duration_seconds", "durationSeconds", "elapsedDuration"]);
   const totalDistance = sumNumber(activities, ["distance_meters", "distanceMeters", "distance"]);
@@ -310,6 +322,7 @@ function recoveryAverage(summary: JsonObject, metric: string, key: string): unkn
 }
 
 export function createToolHandlers(reader: GarminDataReader, options: SyncNowOptions = {}) {
+  // Sync status first checks for an active local lock so users can poll after sync_now.
   async function readSyncStatus(): Promise<JsonObject> {
     const dataDir = options.dataDir ?? process.env.GARMIN_DATA_DIR ?? process.env.SERVER_DATA_DIR;
     if (dataDir) {
@@ -332,10 +345,12 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     }
   }
 
+  // Stream lookup supports latest/archive/auto, with local readers checking latest first for auto.
   async function streamFor(activity_id: string, source: StreamSource = "auto") {
     return reader.readActivityStream(activity_id, source);
   }
 
+  // Shared latest-workout lookup for generic workout tools.
   async function latestMatching(input: z.infer<typeof inputSchemas.get_latest_workout>) {
     const activity = latestWorkout(await allActivities(reader), input);
     const id = activity ? activityId(activity) : null;
@@ -343,6 +358,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     return { activity, id, stream };
   }
 
+  // Shared stream response for latest workout and latest ride stream tools.
   async function latestStreamResponse(input: z.infer<typeof inputSchemas.get_latest_workout_streams>, filter = {}) {
     const activity = latestWorkout(await allActivities(reader), { ...input, ...filter });
     const id = activity ? activityId(activity) : null;
@@ -364,6 +380,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     });
   }
 
+  // Archive helpers load only the month partitions needed for the requested date range.
   async function archiveMetrics(startDate: string, endDate: string, metrics = ["daily", "sleep", "hrv", "stress", "body_battery"]) {
     const entries = await Promise.all(metrics.map(async (metric) => [metric, await reader.readArchiveCollection(metric, startDate, endDate)] as const));
     return Object.fromEntries(entries);

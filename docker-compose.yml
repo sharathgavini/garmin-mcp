@@ -1,3 +1,7 @@
+# Self-hosted TrueNAS compose file.
+#
+# Bind mounts point at persistent host directories so Garmin JSON and encrypted
+# session/OAuth state survive container rebuilds.
 services:
   garmin-mcp:
     container_name: garmin-mcp
@@ -9,6 +13,7 @@ services:
       - path: .env.selfhost
         required: false
     environment:
+      # MCP reads latest data by default; archive is a sibling under /app/data/archive.
       TZ: Asia/Kolkata
       PORT: "3000"
       GARMIN_DATA_MODE: local
@@ -20,6 +25,7 @@ services:
       SYNC_DAYS: "30"
       RUN_INITIAL_SYNC: "false"
     volumes:
+      # HOST_* defaults match the intended TrueNAS pool layout but can be overridden in .env.selfhost.
       - ${HOST_DATA_DIR:-/mnt/scg_pool_1/apps/garmin-mcp/data}:/app/data
       - ${HOST_SECRETS_DIR:-/mnt/scg_pool_1/apps/garmin-mcp/secrets}:/app/secrets
     ports:

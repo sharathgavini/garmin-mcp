@@ -1,7 +1,9 @@
 name: Sync Garmin Data
 
 on:
+  # Manual dispatch lets the user force a cloud sync after a ride.
   workflow_dispatch:
+  # 00:30 UTC is 06:00 Asia/Kolkata.
   schedule:
     - cron: "30 0 * * *"
 
@@ -19,6 +21,7 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Prefer Workload Identity Federation when configured.
       - name: Authenticate to Google Cloud with WIF
         if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
         uses: google-github-actions/auth@v2
@@ -26,6 +29,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
+      # Service account JSON remains as a simple v1 fallback.
       - name: Authenticate to Google Cloud with service account key
         if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER == ''
         uses: google-github-actions/auth@v2

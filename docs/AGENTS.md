@@ -1,0 +1,80 @@
+# Agent Guide
+
+This file is written for coding agents and MCP clients that need to understand this repo quickly.
+
+## Use the Right Tool Family
+
+Use latest tools for current data:
+
+- `get_today_summary`
+- `get_range_summary`
+- `get_recent_activities`
+- `get_latest_activity`
+- `get_latest_workout`
+- `get_latest_ride`
+
+Use archive tools for long-range or explicit historical dates:
+
+- `get_archive_range_summary`
+- `get_activities_by_date_range`
+- `get_workouts_by_date_range`
+- `get_health_metrics_by_date_range`
+- `analyze_training_period`
+- `compare_training_periods`
+
+Use stream tools for detailed workout analysis:
+
+- `get_activity_streams`
+- `get_latest_workout_streams`
+- `get_latest_ride_streams`
+- `analyze_activity`
+
+## Do Not Suggest External Fallbacks
+
+Garmin MCP is intended to be the canonical source of Garmin data. If a stream is missing, tell the user to run sync or backfill with activity streams enabled.
+
+## Important Paths
+
+```text
+/app/data/latest
+/app/data/archive
+/app/secrets/.garmin-session.enc
+```
+
+## Safe Commands
+
+Run tests:
+
+```bash
+.venv/bin/python -m pytest tests
+cd server && npm test
+```
+
+Run latest sync:
+
+```bash
+python -m sync.main --days 30 --output /app/data/latest --include-raw true --activity-details true --activity-streams true
+```
+
+Run backfill:
+
+```bash
+python -m sync.backfill --start-date 2025-10-01 --end-date 2026-06-14 --output /app/data/archive --include-raw true --activity-details true --activity-streams true
+```
+
+## Files To Read First
+
+- `README.md`
+- `docs/GETTING_STARTED.md`
+- `docs/ARCHITECTURE.md`
+- `docs/MCP_TOOLS.md`
+- `server/src/tools.ts`
+- `sync/main.py`
+- `sync/backfill.py`
+
+## Editing Rules
+
+- Do not commit credentials or session files.
+- Do not expose unauthenticated sync.
+- Keep latest and archive behavior separate.
+- Keep stream data full fidelity unless the caller explicitly asks for downsampling.

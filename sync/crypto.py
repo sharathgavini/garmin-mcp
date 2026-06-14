@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""AES-GCM encryption helpers for Garmin session material."""
+
 import base64
 import json
 import os
@@ -16,6 +18,7 @@ class SessionCryptoError(ValueError):
 
 
 def encrypt_session(session: str, key: str | None = None) -> bytes:
+    # A random nonce is required for each AES-GCM encryption.
     aes_key = _decode_key(key or _required_env("GARMIN_SESSION_KEY"))
     nonce = os.urandom(12)
     ciphertext = AESGCM(aes_key).encrypt(nonce, session.encode("utf-8"), None)
@@ -29,6 +32,7 @@ def encrypt_session(session: str, key: str | None = None) -> bytes:
 
 
 def decrypt_session(encrypted: bytes, key: str | None = None) -> str:
+    # Metadata is checked so future encryption formats can fail clearly.
     try:
         payload: dict[str, Any] = json.loads(encrypted.decode("utf-8"))
         if payload.get("version") != ENCRYPTION_VERSION or payload.get("algorithm") != ALGORITHM:
@@ -44,6 +48,7 @@ def decrypt_session(encrypted: bytes, key: str | None = None) -> str:
 
 
 def _decode_key(value: str) -> bytes:
+    # Accept urlsafe token strings, base64, hex, or raw 32-byte text for local usability.
     candidates = []
     stripped = value.strip()
     candidates.append(stripped.encode("utf-8"))

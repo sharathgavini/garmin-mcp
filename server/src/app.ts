@@ -1,3 +1,8 @@
+// Express application wiring for the Garmin MCP server.
+//
+// This file owns HTTP concerns: CORS, JSON parsing, OAuth routes, bearer/OAuth
+// authorization, health checks, and MCP tool registration. Business logic stays
+// in tools/data/workout helper modules so the transport remains thin.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import cors from "cors";
@@ -11,6 +16,7 @@ import type { GarminDataReader } from "./types.js";
 export function createApp(
   options: { reader?: GarminDataReader; oauth?: OAuthService; bearerToken?: string; installAuthProbe?: boolean } = {}
 ) {
+  // Dependency injection keeps tests fast and lets production choose env-based readers.
   const app = express();
   const bearerToken = options.bearerToken ?? process.env.MCP_BEARER_TOKEN;
   const oauth = options.oauth ?? new OAuthService();
@@ -23,6 +29,7 @@ export function createApp(
 
   installOAuthRoutes(app, oauth);
 
+  // Every MCP request must carry either the configured bearer token or a valid OAuth access token.
   async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
     const header = req.header("authorization") ?? "";
     const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
@@ -37,6 +44,8 @@ export function createApp(
     res.status(401).json({ error: "Unauthorized" });
   }
 
+  // MCP clients discover behavior from these descriptions, so they intentionally steer long-range
+  // questions toward archive tools and detailed workout questions toward stream tools.
   function registerTools(server: McpServer) {
     const toolDescriptions: Record<ToolName, string> = {
       get_today_summary: "Return the daily Garmin summary for one date.",
@@ -95,6 +104,7 @@ export function createApp(
     });
   }
 
+  // The MCP SDK transport handles the JSON-RPC request body once auth has passed.
   app.post("/mcp", requireAuth, async (req, res) => {
     const server = new McpServer({
       name: "garmin-mcp",
@@ -115,6 +125,7 @@ export function createApp(
     await transport.handleRequest(req, res, req.body);
   });
 
+  // Convert validation/auth errors into stable HTTP responses and hide unexpected internals.
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error instanceof z.ZodError) {
       res.status(400).json({ error: "Invalid input", issues: error.issues });

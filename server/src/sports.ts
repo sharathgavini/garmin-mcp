@@ -1,3 +1,5 @@
+// Garmin activity names vary by device and API payload. This helper maps those
+// names into stable sport categories used by MCP filters and analysis tools.
 export type SportCategory = "cycling" | "running" | "walking" | "badminton" | "strength" | "mobility" | "other";
 
 export function classifySport(value: unknown): SportCategory {

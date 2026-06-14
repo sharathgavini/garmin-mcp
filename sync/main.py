@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+"""Latest Garmin sync command.
+
+This module writes /latest-style JSON: compact normalized files, raw payloads,
+activity details, activity streams, coach context, manifest, and sync status.
+"""
+
 import argparse
 import os
 from datetime import date, datetime, timedelta, timezone
@@ -41,8 +47,10 @@ def run_sync(
     started_at = datetime.now(timezone.utc)
     days_to_fetch = _date_range(days)
     try:
+        # Garmin authentication is session-first so scheduled runs avoid fresh logins.
         client = login_or_restore(session_file=session_file, force_login=force_login)
 
+        # Keep normalized records and raw payloads side by side; raw protects future reprocessing.
         daily: list[dict[str, Any]] = []
         sleep: list[dict[str, Any]] = []
         hrv: list[dict[str, Any]] = []
@@ -57,6 +65,7 @@ def run_sync(
             "activities": [],
         }
 
+        # Garmin health endpoints are day-based, so latest sync loops over each requested day.
         for day in days_to_fetch:
             day_text = day.isoformat()
             daily_raw = _safe_dict(client.get_stats, day_text)
@@ -76,6 +85,7 @@ def run_sync(
             stress.append(normalize_stress(stress_raw, day))
             body_battery.append(normalize_body_battery(body_battery_raw, day))
 
+        # Activity lists are fetched as a recent page and filtered back to the requested date window.
         activities_raw = _safe_list(client.get_activities, 0, max(100, days * 4))
         raw_payloads["activities"] = activities_raw
         activities = [normalize_activity(item) for item in activities_raw if isinstance(item, dict)]
@@ -144,6 +154,7 @@ def _write_outputs(
     activity_streams: bool,
     raw_payloads: dict[str, list[Any]] | None = None,
 ) -> None:
+    # Top-level files are what latest MCP tools read for fast recent summaries.
     write_json(output / "daily.json", daily)
     write_json(output / "sleep.json", sleep)
     write_json(output / "hrv.json", hrv)
@@ -155,6 +166,7 @@ def _write_outputs(
     streams_dir = output / "activity_streams"
     _clear_json_files(details_dir)
     _clear_json_files(streams_dir)
+    # Activity-specific files are separate so tools can fetch details/streams only when needed.
     for activity in activities[:30]:
         activity_id = str(activity["id"])
         payloads = fetch_activity_payloads(client, activity_id)
@@ -170,6 +182,7 @@ def _write_outputs(
             write_json(output / "raw" / "activity_streams" / f"{activity_id}.json", payloads)
 
     if include_raw:
+        # Raw latest payloads stay local/self-hosted unless an upload path explicitly allows them.
         raw_payloads = raw_payloads or {}
         write_raw_latest(output, "daily", raw_payloads.get("daily", []))
         write_raw_latest(output, "sleep", raw_payloads.get("sleep", []))

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Encrypted Garmin session restore/login helpers."""
+
 import os
 from pathlib import Path
 
@@ -11,6 +13,7 @@ DEFAULT_SESSION_FILE = Path(os.environ.get("GARMIN_SESSION_FILE", ".garmin-sessi
 
 
 def load_session(session_file: Path = DEFAULT_SESSION_FILE) -> str | None:
+    # Session restore should fail closed and allow login to retry.
     try:
         if not session_file.exists():
             return None
@@ -20,6 +23,7 @@ def load_session(session_file: Path = DEFAULT_SESSION_FILE) -> str | None:
 
 
 def save_session(client: Garmin, session_file: Path = DEFAULT_SESSION_FILE) -> bool:
+    # Persist encrypted garth tokenstore with owner-only permissions.
     try:
         serialized = client.garth.dumps()
         session_file.parent.mkdir(parents=True, exist_ok=True)
@@ -45,6 +49,7 @@ def login_or_restore(
     session_file: Path = DEFAULT_SESSION_FILE,
     force_login: bool = False,
 ) -> Garmin:
+    # Normal syncs should reuse encrypted sessions; force_login bypasses restore for first login/debugging.
     if not force_login:
         serialized = load_session(session_file)
         if serialized:

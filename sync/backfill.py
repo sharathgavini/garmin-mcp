@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+"""Historical Garmin backfill command.
+
+Backfill writes partitioned archive JSON by month, maintains a checkpoint, and
+skips existing activity detail/stream files unless --force is used.
+"""
+
 import argparse
 import time
 from collections import defaultdict
@@ -38,6 +44,7 @@ def run_backfill(
     session_file: Path = DEFAULT_SESSION_FILE,
     client: Any | None = None,
 ) -> None:
+    # Validate the requested range before touching the archive checkpoint.
     start = parse_iso_date(start_date)
     end = parse_iso_date(end_date)
     if start > end:
@@ -48,6 +55,7 @@ def run_backfill(
     output.mkdir(parents=True, exist_ok=True)
     checkpoint_path = output / "backfill_checkpoint.json"
     started_at = datetime.now(timezone.utc)
+    # By default backfill resumes after completed_until; --force starts over from start_date.
     resume_start = start if force else resume_date(start, load_checkpoint(checkpoint_path))
     write_checkpoint(
         checkpoint_path,
@@ -63,6 +71,7 @@ def run_backfill(
     should_include_raw = include_raw or not skip_raw
 
     try:
+        # Chunking keeps Garmin requests polite and makes interruption/resume practical.
         for chunk_start, chunk_end in chunk_ranges(resume_start, end, chunk_days):
             chunk_data = fetch_chunk(garmin, chunk_start, chunk_end, include_raw=should_include_raw)
             write_partitioned_rows(output, "daily", chunk_data["daily"])
@@ -125,6 +134,7 @@ def run_backfill(
 
 
 def fetch_chunk(client: Any, start: date, end: date, *, include_raw: bool = False) -> dict[str, list[dict[str, Any]]]:
+    # Daily health data is fetched per day while activities can use a date-range endpoint when available.
     daily = []
     sleep = []
     hrv = []
@@ -193,6 +203,7 @@ def fetch_activities(client: Any, start: date, end: date) -> list[Any]:
 
 
 def write_partitioned_rows(output: Path, dataset: str, rows: list[dict[str, Any]]) -> None:
+    # Archive partitions are month-based so historical tools can load only intersecting months.
     grouped: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         row_date = parse_iso_date(str(row.get("date")))
@@ -205,6 +216,7 @@ def write_partitioned_rows(output: Path, dataset: str, rows: list[dict[str, Any]
 
 
 def write_activity_details(output: Path, client: Any, activities: list[dict[str, Any]], *, force: bool = False, include_raw: bool = False) -> None:
+    # Details are stored by activity ID to avoid re-downloading on resumed backfills.
     details_dir = output / "activity_details"
     details_dir.mkdir(parents=True, exist_ok=True)
     for activity in activities:
@@ -224,6 +236,7 @@ def write_activity_details(output: Path, client: Any, activities: list[dict[str,
 
 
 def write_activity_streams(output: Path, client: Any, activities: list[dict[str, Any]], *, force: bool = False, include_raw: bool = False) -> None:
+    # Streams are also stored by activity ID because they are large and reusable across analyses.
     streams_dir = output / "activity_streams"
     streams_dir.mkdir(parents=True, exist_ok=True)
     for activity in activities:

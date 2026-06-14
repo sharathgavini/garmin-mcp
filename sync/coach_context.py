@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Compact recent coaching context generator for latest-data tools."""
+
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +17,7 @@ def generate_coach_context(
     activities: list[dict[str, Any]],
     days: int = 14,
 ) -> dict[str, Any]:
+    # Keep this compact; long-range and detailed analysis should use archive/stream tools.
     daily_window = daily[-days:]
     sleep_window = sleep[-days:]
     hrv_window = hrv[-days:]

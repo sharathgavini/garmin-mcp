@@ -1,7 +1,9 @@
 name: Deploy MCP Server
 
 on:
+  # Manual deploy is useful after validating local/GCS flows.
   workflow_dispatch:
+  # Server-only changes deploy automatically from main.
   push:
     branches: [main]
     paths:
@@ -18,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Prefer Workload Identity Federation when configured.
       - name: Authenticate to Google Cloud with WIF
         if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
         uses: google-github-actions/auth@v2
@@ -25,6 +28,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
+      # Service account JSON remains as a simple v1 fallback.
       - name: Authenticate to Google Cloud with service account key
         if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER == ''
         uses: google-github-actions/auth@v2
