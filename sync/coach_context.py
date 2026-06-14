@@ -39,8 +39,11 @@ def generate_coach_context(
                 "duration_seconds": _sum_number(recent_activities, "duration_seconds"),
                 "calories": _sum_number(recent_activities, "calories"),
             },
-            "sleep_trend": _trend(sleep_window, ["date", "duration_minutes", "score"]),
-            "hrv_trend": _trend(hrv_window, ["date", "status", "overnight_avg", "seven_day_avg"]),
+            "sleep_trend": _trend(
+                sleep_window,
+                ["date", "total_sleep_seconds", "duration_minutes", "sleep_score", "score", "avg_sleep_stress", "avg_heart_rate", "avg_spo2", "body_battery_change"],
+            ),
+            "hrv_trend": _trend(hrv_window, ["date", "hrv_status", "status", "avg_overnight_hrv", "last_night_avg", "weekly_avg", "reading_count"]),
             "stress_trend": _trend(stress_window, ["date", "avg_stress", "rest_minutes"]),
             "body_battery_trend": _trend(body_battery_window, ["date", "morning", "low", "high", "evening"]),
             "recovery_indicators": _recovery_indicators(daily_window, sleep_window, hrv_window, body_battery_window),

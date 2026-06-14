@@ -1,5 +1,44 @@
 # Troubleshooting
 
+## Sleep Or HRV Files Only Contain Dates
+
+If normalized `sleep.json` or `hrv.json` looks like this:
+
+```json
+[
+  { "date": "2026-06-14" }
+]
+```
+
+but raw payloads exist under `raw/sleep` or `raw/hrv`, re-normalize from raw files without hitting Garmin.
+
+Latest:
+
+```bash
+python -m sync.renormalize \
+  --input /app/data/latest/raw \
+  --output /app/data/latest \
+  --datasets sleep,hrv
+```
+
+Archive:
+
+```bash
+python -m sync.renormalize \
+  --input /app/data/archive/raw \
+  --output /app/data/archive \
+  --datasets sleep,hrv
+```
+
+For TrueNAS, run the same commands through Docker:
+
+```bash
+docker exec garmin-mcp python -m sync.renormalize \
+  --input /app/data/latest/raw \
+  --output /app/data/latest \
+  --datasets sleep,hrv
+```
+
 ## `/mcp` returns 401
 
 Check that the connector sends `Authorization: Bearer ...` and that it matches the `MCP_BEARER_TOKEN` Cloud Run environment variable or secret.

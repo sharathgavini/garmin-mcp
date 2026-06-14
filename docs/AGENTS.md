@@ -62,6 +62,13 @@ Run backfill:
 python -m sync.backfill --start-date 2025-10-01 --end-date 2026-06-14 --output /app/data/archive --include-raw true --activity-details true --activity-streams true
 ```
 
+Repair normalized sleep/HRV from raw files:
+
+```bash
+python -m sync.renormalize --input /app/data/latest/raw --output /app/data/latest --datasets sleep,hrv
+python -m sync.renormalize --input /app/data/archive/raw --output /app/data/archive --datasets sleep,hrv
+```
+
 ## Files To Read First
 
 - `README.md`

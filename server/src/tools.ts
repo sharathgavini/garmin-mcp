@@ -261,8 +261,12 @@ function healthSummary(rows: JsonObject[], metric: string): JsonObject {
     record_count: rows.length,
     date_range: rows.length ? { start: rows[0].date ?? null, end: rows[rows.length - 1].date ?? null } : null,
     averages: {
-      hrv: avgNumber(rows, ["hrv", "avg_hrv", "weekly_avg"]),
+      hrv: avgNumber(rows, ["avg_overnight_hrv", "last_night_avg", "hrv", "avg_hrv", "weekly_avg"]),
       sleep_score: avgNumber(rows, ["sleep_score", "overall_score"]),
+      total_sleep_seconds: avgNumber(rows, ["total_sleep_seconds"]),
+      avg_sleep_stress: avgNumber(rows, ["avg_sleep_stress"]),
+      avg_sleep_hr: avgNumber(rows, ["avg_heart_rate"]),
+      avg_spo2: avgNumber(rows, ["avg_spo2"]),
       stress: avgNumber(rows, ["avg_stress", "stress_avg", "stress"]),
       body_battery: avgNumber(rows, ["body_battery_high", "max_body_battery", "body_battery"]),
       training_readiness: avgNumber(rows, ["training_readiness"])

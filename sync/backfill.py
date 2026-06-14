@@ -158,8 +158,8 @@ def fetch_chunk(client: Any, start: date, end: date, *, include_raw: bool = Fals
         stress_raw = safe_dict(getattr(client, "get_stress_data", None), day_text)
         body_battery_raw = safe_list(getattr(client, "get_body_battery", None), day_text, day_text)
         daily.append(normalize_daily(daily_raw | {"trainingReadiness": readiness_raw}, day))
-        sleep.append(normalize_sleep(sleep_raw, day))
-        hrv.append(normalize_hrv(hrv_raw, day))
+        sleep.append(normalize_sleep(sleep_raw, day, raw_payload_path=f"raw/sleep/year={day.year:04d}/month={day.month:02d}/sleep.json"))
+        hrv.append(normalize_hrv(hrv_raw, day, raw_payload_path=f"raw/hrv/year={day.year:04d}/month={day.month:02d}/hrv.json"))
         stress.append(normalize_stress(stress_raw, day))
         body_battery.append(normalize_body_battery(body_battery_raw, day))
         if include_raw:

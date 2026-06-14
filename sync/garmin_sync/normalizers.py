@@ -31,6 +31,15 @@ def pick_path(source: dict[str, Any], *paths: tuple[str, ...]) -> Any:
     return None
 
 
+def pick_any(sources: list[dict[str, Any]], *keys: str) -> Any:
+    for source in sources:
+        if isinstance(source, dict):
+            value = pick(source, *keys)
+            if value is not None:
+                return value
+    return None
+
+
 def normalize_daily(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
     readiness = pick(raw, "trainingReadiness")
     if not isinstance(readiness, dict):
@@ -52,29 +61,98 @@ def normalize_daily(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
     )
 
 
-def normalize_sleep(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
-    return compact(
-        {
-            "date": str(day),
-            "duration_minutes": minutes(pick(raw, "sleepTimeSeconds", "durationSeconds")),
-            "score": pick(raw, "overallScore", "score")
-            or pick_path(raw, ("sleepScores", "overall", "value"), ("sleepScores", "overallScore", "value")),
-            "deep_minutes": minutes(pick(raw, "deepSleepSeconds", "deepSeconds")),
-            "rem_minutes": minutes(pick(raw, "remSleepSeconds", "remSeconds")),
-            "awake_minutes": minutes(pick(raw, "awakeSleepSeconds", "awakeSeconds")),
-        }
-    )
+def normalize_sleep(raw: dict[str, Any], day: date | str, raw_payload_path: str | None = None) -> dict[str, Any]:
+    daily_sleep = raw.get("dailySleepDTO") if isinstance(raw.get("dailySleepDTO"), dict) else {}
+    naps = pick_any([raw, daily_sleep], "dailyNapDTOS", "naps") or []
+    sleep_need = pick_any([raw, daily_sleep], "sleepNeed")
+    sleep_alignment = pick_any([raw, daily_sleep], "sleepAlignment")
+    breathing = pick_any([raw, daily_sleep], "breathingDisruptionData") or {}
+    row = {
+        "date": str(day),
+        "sleep_start_gmt": pick_any([raw, daily_sleep], "sleepStartTimestampGMT", "sleepStartGMT"),
+        "sleep_end_gmt": pick_any([raw, daily_sleep], "sleepEndTimestampGMT", "sleepEndGMT"),
+        "sleep_start_local": pick_any([raw, daily_sleep], "sleepStartTimestampLocal", "sleepStartLocal"),
+        "sleep_end_local": pick_any([raw, daily_sleep], "sleepEndTimestampLocal", "sleepEndLocal"),
+        "total_sleep_seconds": pick_any([raw, daily_sleep], "sleepTimeSeconds", "totalSleepSeconds", "durationSeconds"),
+        "deep_sleep_seconds": pick_any([raw, daily_sleep], "deepSleepSeconds", "deepSeconds"),
+        "light_sleep_seconds": pick_any([raw, daily_sleep], "lightSleepSeconds", "lightSeconds"),
+        "rem_sleep_seconds": pick_any([raw, daily_sleep], "remSleepSeconds", "remSeconds"),
+        "awake_sleep_seconds": pick_any([raw, daily_sleep], "awakeSleepSeconds", "awakeSeconds"),
+        "sleep_score": pick_any([raw, daily_sleep], "overallScore", "sleepScore", "score")
+        or pick_path(raw, ("sleepScores", "overall", "value"), ("sleepScores", "overallScore", "value")),
+        "sleep_score_qualifier": pick_any([raw, daily_sleep], "sleepScoreQualifier", "scoreQualifier", "overallScoreQualifier"),
+        "avg_sleep_stress": pick_any([raw, daily_sleep], "avgSleepStress", "averageSleepStress"),
+        "avg_heart_rate": pick_any([raw, daily_sleep], "avgHeartRate", "averageHeartRate"),
+        "lowest_spo2": pick_any([raw, daily_sleep], "lowestSpO2Value", "lowestSpO2", "lowestSpo2", "minSpO2"),
+        "avg_spo2": pick_any([raw, daily_sleep], "averageSpO2Value", "avgSpO2", "averageSpo2"),
+        "avg_respiration": pick_any([raw, daily_sleep], "averageRespirationValue", "avgRespiration"),
+        "lowest_respiration": pick_any([raw, daily_sleep], "lowestRespirationValue", "minRespiration"),
+        "highest_respiration": pick_any([raw, daily_sleep], "highestRespirationValue", "maxRespiration"),
+        "body_battery_change": pick_any([raw, daily_sleep], "bodyBatteryChange"),
+        "nap_time_seconds": pick_any([raw, daily_sleep], "napTimeSeconds", "dailyNapSeconds"),
+        "naps": naps,
+        "sleep_need": sleep_need,
+        "sleep_alignment": sleep_alignment,
+        "breathing_disruption_severity": pick(breathing, "severity", "breathingDisruptionSeverity")
+        if isinstance(breathing, dict)
+        else pick_any([raw, daily_sleep], "breathingDisruptionSeverity"),
+        "raw_payload_path": raw_payload_path,
+    }
+    required = [
+        "sleep_start_gmt",
+        "sleep_end_gmt",
+        "total_sleep_seconds",
+        "deep_sleep_seconds",
+        "light_sleep_seconds",
+        "rem_sleep_seconds",
+        "awake_sleep_seconds",
+        "sleep_score",
+        "avg_sleep_stress",
+        "avg_heart_rate",
+        "avg_spo2",
+        "body_battery_change",
+    ]
+    missing = [field for field in required if row.get(field) is None]
+    row["data_available"] = any(row.get(field) is not None for field in required)
+    row["missing_fields"] = missing
+    row["extraction_notes"] = ["dailySleepDTO found"] if daily_sleep else ["dailySleepDTO missing; normalized from top-level payload only"]
+    legacy = {
+        "duration_minutes": minutes(row.get("total_sleep_seconds")),
+        "score": row.get("sleep_score"),
+        "deep_minutes": minutes(row.get("deep_sleep_seconds")),
+        "rem_minutes": minutes(row.get("rem_sleep_seconds")),
+        "awake_minutes": minutes(row.get("awake_sleep_seconds")),
+    }
+    return compact(row | legacy)
 
 
-def normalize_hrv(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
-    return compact(
-        {
-            "date": str(day),
-            "status": pick(raw, "status", "hrvStatus"),
-            "overnight_avg": pick(raw, "lastNightAvg", "overnightAvg", "overnight_avg"),
-            "seven_day_avg": pick(raw, "weeklyAvg", "sevenDayAvg", "seven_day_avg"),
-        }
-    )
+def normalize_hrv(raw: dict[str, Any], day: date | str, raw_payload_path: str | None = None) -> dict[str, Any]:
+    summary = raw.get("hrvSummary") if isinstance(raw.get("hrvSummary"), dict) else {}
+    readings_raw = pick(raw, "hrvReadings", "readings") or []
+    readings = [_normalize_hrv_reading(item) for item in readings_raw if isinstance(item, dict)]
+    hrv_values = [item["hrv_value"] for item in readings if isinstance(item.get("hrv_value"), (int, float))]
+    row = {
+        "date": str(day),
+        "avg_overnight_hrv": pick(raw, "avgOvernightHrv", "averageOvernightHrv"),
+        "last_night_avg": pick_any([raw, summary], "lastNightAvg", "last_night_avg"),
+        "last_night_5min_high": pick_any([raw, summary], "lastNight5MinHigh", "lastNight5minHigh", "lastNightFiveMinuteHigh"),
+        "weekly_avg": pick_any([raw, summary], "weeklyAvg", "sevenDayAvg", "weekly_avg"),
+        "hrv_status": pick_any([raw, summary], "status", "hrvStatus"),
+        "feedback_phrase": pick_any([raw, summary], "feedbackPhrase", "feedback_phrase"),
+        "baseline_balanced_low": pick_any([raw, summary], "baselineBalancedLow", "balancedLow"),
+        "baseline_balanced_upper": pick_any([raw, summary], "baselineBalancedUpper", "balancedUpper"),
+        "baseline_low_upper": pick_any([raw, summary], "baselineLowUpper", "lowUpper"),
+        "readings": readings,
+        "reading_count": len(readings),
+        "min_hrv": min(hrv_values) if hrv_values else None,
+        "max_hrv": max(hrv_values) if hrv_values else None,
+        "data_available": bool(summary or readings or pick(raw, "avgOvernightHrv")),
+        "raw_payload_path": raw_payload_path,
+    }
+    row["status"] = row["hrv_status"]
+    row["overnight_avg"] = row["avg_overnight_hrv"] or row["last_night_avg"]
+    row["seven_day_avg"] = row["weekly_avg"]
+    return compact(row)
 
 
 def normalize_stress(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
@@ -192,6 +270,16 @@ def _normalize_lap(raw: dict[str, Any], lap_number: int) -> dict[str, Any]:
             "distance_meters": pick(raw, "distance", "distanceMeters"),
             "duration_seconds": pick(raw, "duration", "elapsedDuration"),
             "avg_hr": pick(raw, "averageHR", "avg_hr"),
+        }
+    )
+
+
+def _normalize_hrv_reading(raw: dict[str, Any]) -> dict[str, Any]:
+    return compact(
+        {
+            "hrv_value": pick(raw, "hrvValue", "hrv_value", "value"),
+            "reading_time_gmt": pick(raw, "readingTimeGMT", "reading_time_gmt", "timestampGMT"),
+            "reading_time_local": pick(raw, "readingTimeLocal", "reading_time_local", "timestampLocal"),
         }
     )
 

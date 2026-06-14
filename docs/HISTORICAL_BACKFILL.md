@@ -39,6 +39,30 @@ Raw payloads are written under the archive itself when `--include-raw true`:
 /app/data/archive/raw/activity_streams/{activity_id}.json
 ```
 
+## Re-Normalize Sleep and HRV From Raw
+
+If `sleep.json` or `hrv.json` contains only date fields, raw Garmin payloads can be reprocessed without calling Garmin again.
+
+Latest data:
+
+```bash
+python -m sync.renormalize \
+  --input /app/data/latest/raw \
+  --output /app/data/latest \
+  --datasets sleep,hrv
+```
+
+Archive data:
+
+```bash
+python -m sync.renormalize \
+  --input /app/data/archive/raw \
+  --output /app/data/archive \
+  --datasets sleep,hrv
+```
+
+After this, sleep records should include duration, stages, sleep stress, SpO2, body battery change, naps, sleep need/alignment, and breathing disruption fields where Garmin provided them. HRV records should include last night average, weekly average, status, baseline fields, and readings where Garmin provided them.
+
 Before rerunning a forced backfill to repair extraction, inspect a known activity first:
 
 ```bash

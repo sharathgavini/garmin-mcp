@@ -45,6 +45,13 @@ Inspect one activity:
 python -m sync.inspect_activity --activity-id 23206576686 --output ./local-data/debug
 ```
 
+Re-normalize from raw files:
+
+```bash
+python -m sync.renormalize --input ./local-data/latest/raw --output ./local-data/latest --datasets sleep,hrv
+python -m sync.renormalize --input ./local-data/archive/raw --output ./local-data/archive --datasets sleep,hrv
+```
+
 Dry-run GCS upload:
 
 ```bash

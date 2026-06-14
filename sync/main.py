@@ -80,8 +80,8 @@ def run_sync(
             raw_payloads["stress"].append({"date": day_text, "payload": stress_raw})
             raw_payloads["body_battery"].append({"date": day_text, "payload": body_battery_raw})
             daily.append(normalize_daily(daily_raw | {"trainingReadiness": readiness_raw}, day))
-            sleep.append(normalize_sleep(sleep_raw, day))
-            hrv.append(normalize_hrv(hrv_raw, day))
+            sleep.append(normalize_sleep(sleep_raw, day, raw_payload_path="raw/sleep/sleep.json"))
+            hrv.append(normalize_hrv(hrv_raw, day, raw_payload_path="raw/hrv/hrv.json"))
             stress.append(normalize_stress(stress_raw, day))
             body_battery.append(normalize_body_battery(body_battery_raw, day))
 

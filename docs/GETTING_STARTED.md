@@ -107,6 +107,13 @@ python -m sync.backfill \
   --activity-streams true
 ```
 
+Re-normalize sleep/HRV from raw files:
+
+```bash
+python -m sync.renormalize --input ./local-data/latest/raw --output ./local-data/latest --datasets sleep,hrv
+python -m sync.renormalize --input ./local-data/archive/raw --output ./local-data/archive --datasets sleep,hrv
+```
+
 ## TrueNAS Path
 
 Use [TRUENAS_DEPLOYMENT.md](TRUENAS_DEPLOYMENT.md) when you are ready to run the container on TrueNAS behind Cloudflare Tunnel.
