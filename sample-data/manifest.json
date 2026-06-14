@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-06-13T06:00:00+05:30",
+  "source": "garmin-connect",
+  "date_range": {
+    "start": "2026-05-14",
+    "end": "2026-06-13"
+  },
+  "files": {
+    "daily": "latest/daily.json",
+    "sleep": "latest/sleep.json",
+    "hrv": "latest/hrv.json",
+    "stress": "latest/stress.json",
+    "body_battery": "latest/body_battery.json",
+    "activities": "latest/activities.json",
+    "coach_context_14d": "latest/coach_context_14d.json"
+  }
+}

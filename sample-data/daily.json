@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2026-06-12",
+    "steps": 9042,
+    "calories": 2440,
+    "active_calories": 612,
+    "resting_hr": 52,
+    "intensity_minutes": 48,
+    "floors": 8,
+    "training_readiness": 72,
+    "acute_load": 392,
+    "recovery_hours": 18
+  },
+  {
+    "date": "2026-06-13",
+    "steps": 6310,
+    "calories": 2105,
+    "active_calories": 380,
+    "resting_hr": 54,
+    "intensity_minutes": 32,
+    "floors": 5,
+    "training_readiness": 68,
+    "acute_load": 410,
+    "recovery_hours": 22
+  }
+]

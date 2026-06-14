@@ -1,0 +1,60 @@
+name: Sync Garmin Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 0 * * *"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Authenticate to Google Cloud with WIF
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Authenticate to Google Cloud with service account key
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER == ''
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+
+      - name: Install dependencies
+        run: pip install -r sync/requirements.txt
+
+      - name: Restore encrypted Garmin session
+        id: garmin-session-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .garmin-session.enc
+          key: garmin-session-${{ github.repository_id }}-${{ github.run_id }}
+          restore-keys: |
+            garmin-session-${{ github.repository_id }}-
+
+      - name: Sync and upload
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          GARMIN_SESSION_KEY: ${{ secrets.GARMIN_SESSION_KEY }}
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+        run: python -m sync.main --days 30 --output sync-output --upload-bucket "$GCS_BUCKET"
+
+      - name: Save encrypted Garmin session
+        if: always() && hashFiles('.garmin-session.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .garmin-session.enc
+          key: garmin-session-${{ github.repository_id }}-${{ github.run_id }}

@@ -1,0 +1,23 @@
+{
+  "id": "sample-run-1",
+  "type": "running",
+  "date": "2026-06-12",
+  "distance_meters": 7200,
+  "duration_seconds": 2380,
+  "avg_hr": 148,
+  "max_hr": 174,
+  "calories": 612,
+  "training_effect": 3.2,
+  "aerobic_training_effect": 3.2,
+  "anaerobic_training_effect": 0.8,
+  "elevation_gain_meters": 64,
+  "laps": [
+    {
+      "lap": 1,
+      "distance_meters": 1000,
+      "duration_seconds": 330,
+      "avg_hr": 136
+    }
+  ],
+  "streams_omitted": true
+}

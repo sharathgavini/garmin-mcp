@@ -1,0 +1,18 @@
+[
+  {
+    "date": "2026-06-12",
+    "duration_minutes": 426,
+    "score": 82,
+    "deep_minutes": 72,
+    "rem_minutes": 94,
+    "awake_minutes": 18
+  },
+  {
+    "date": "2026-06-13",
+    "duration_minutes": 397,
+    "score": 76,
+    "deep_minutes": 61,
+    "rem_minutes": 88,
+    "awake_minutes": 25
+  }
+]

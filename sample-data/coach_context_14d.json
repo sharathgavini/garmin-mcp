@@ -1,0 +1,35 @@
+{
+  "days": 14,
+  "generated_at": "2026-06-13T06:00:00+05:30",
+  "sleep": {
+    "avg_duration_minutes": 412,
+    "avg_score": 79,
+    "notes": ["Sleep slightly lower on 2026-06-13."]
+  },
+  "hrv": {
+    "latest_status": "balanced",
+    "latest_overnight_avg": 55
+  },
+  "stress": {
+    "avg_stress": 34,
+    "rest_minutes_latest": 143
+  },
+  "body_battery": {
+    "latest_morning": 78,
+    "latest_evening": 34
+  },
+  "activities": [
+    {
+      "id": "sample-run-1",
+      "type": "running",
+      "date": "2026-06-12",
+      "distance_meters": 7200,
+      "duration_seconds": 2380,
+      "avg_hr": 148,
+      "training_effect": 3.2
+    }
+  ],
+  "acute_load": 410,
+  "recovery_signals": ["Recovery hours currently 22."],
+  "injury_notes": []
+}

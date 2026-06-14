@@ -1,0 +1,10 @@
+{
+  "id": "sample-walk-1",
+  "type": "walking",
+  "date": "2026-06-13",
+  "distance_meters": 3100,
+  "duration_seconds": 2820,
+  "avg_hr": 98,
+  "calories": 205,
+  "streams_omitted": true
+}

@@ -1,0 +1,21 @@
+[
+  {
+    "id": "sample-run-1",
+    "type": "running",
+    "date": "2026-06-12",
+    "distance_meters": 7200,
+    "duration_seconds": 2380,
+    "avg_hr": 148,
+    "calories": 612,
+    "training_effect": 3.2
+  },
+  {
+    "id": "sample-walk-1",
+    "type": "walking",
+    "date": "2026-06-13",
+    "distance_meters": 3100,
+    "duration_seconds": 2820,
+    "avg_hr": 98,
+    "calories": 205
+  }
+]

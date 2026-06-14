@@ -1,0 +1,14 @@
+[
+  {
+    "date": "2026-06-12",
+    "avg_stress": 31,
+    "max_stress": 78,
+    "rest_minutes": 184
+  },
+  {
+    "date": "2026-06-13",
+    "avg_stress": 36,
+    "max_stress": 82,
+    "rest_minutes": 143
+  }
+]
