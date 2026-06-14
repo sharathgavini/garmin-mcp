@@ -1,13 +1,17 @@
 # TrueNAS Self-Hosted Deployment
 
-This deployment runs the TypeScript MCP HTTP server and Python Garmin sync in one container. The container stores normalized Garmin JSON under `/app/data` and the encrypted Garmin session under `/app/secrets`.
+This deployment runs the TypeScript MCP HTTP server and Python Garmin sync in one container. The container stores latest normalized Garmin JSON under `/app/data/latest`, historical archive data under `/app/data/archive`, and the encrypted Garmin session under `/app/secrets`.
 
 Cloud Run and GCS support remain available; this is an additional self-hosted path for running behind your existing Cloudflare Tunnel.
 
 ## Layout
 
 - MCP server: `http://garmin-mcp:3000`
-- Normalized JSON volume: `/app/data`
+- Data volume: `/app/data`
+- Latest MCP JSON: `/app/data/latest`
+- Historical archive: `/app/data/archive`
+- Optional raw backfill data: `/app/data/raw`
+- Optional exports: `/app/data/exports`
 - Encrypted session volume: `/app/secrets`
 - Encrypted session file: `/app/secrets/.garmin-session.enc`
 - Default sync schedule: daily at `06:00` in `Asia/Kolkata`
@@ -18,8 +22,22 @@ Use this host directory structure on TrueNAS:
 ```text
 /mnt/scg_pool_1/apps/garmin-mcp/
 ├── data
+│   ├── latest
+│   ├── archive
+│   ├── raw
+│   └── exports
 ├── secrets
 └── repo
+```
+
+Create the host directories:
+
+```bash
+mkdir -p /mnt/scg_pool_1/apps/garmin-mcp/data/latest
+mkdir -p /mnt/scg_pool_1/apps/garmin-mcp/data/archive
+mkdir -p /mnt/scg_pool_1/apps/garmin-mcp/data/raw
+mkdir -p /mnt/scg_pool_1/apps/garmin-mcp/data/exports
+mkdir -p /mnt/scg_pool_1/apps/garmin-mcp/secrets
 ```
 
 ## Required Environment
@@ -36,7 +54,7 @@ GARMIN_SESSION_KEY=...
 MCP_BEARER_TOKEN=...
 
 GARMIN_DATA_MODE=local
-GARMIN_DATA_DIR=/app/data
+GARMIN_DATA_DIR=/app/data/latest
 GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc
 TZ=Asia/Kolkata
 ```
@@ -55,7 +73,7 @@ PY
 Build and start:
 
 ```bash
-docker compose up -d --build
+docker compose --env-file .env.selfhost up -d --build
 ```
 
 For compose, keep host paths and secrets in `.env.selfhost`:
@@ -70,7 +88,7 @@ GARMIN_SESSION_KEY=...
 MCP_BEARER_TOKEN=...
 
 GARMIN_DATA_MODE=local
-GARMIN_DATA_DIR=/app/data
+GARMIN_DATA_DIR=/app/data/latest
 GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc
 TZ=Asia/Kolkata
 ```
@@ -78,7 +96,7 @@ TZ=Asia/Kolkata
 Validate compose before starting:
 
 ```bash
-docker compose config
+docker compose --env-file .env.selfhost config
 ```
 
 Expected output should include bind mounts like:
@@ -97,7 +115,7 @@ curl http://localhost:3000/healthz
 Run a manual sync:
 
 ```bash
-docker exec garmin-mcp python -m sync.main --days 7 --output /app/data
+docker exec garmin-mcp python -m sync.main --days 7 --output /app/data/latest
 ```
 
 The manual command works because the container sets `GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc`.
@@ -106,6 +124,47 @@ View scheduled sync logs:
 
 ```bash
 docker logs garmin-mcp
+```
+
+## Historical Backfill
+
+Backfill writes a partitioned archive under `/app/data/archive` and does not change the MCP server's fast latest-data path.
+
+Run a historical backfill:
+
+```bash
+docker exec garmin-mcp python -m sync.backfill \
+  --start-date 2020-01-01 \
+  --end-date 2026-06-14 \
+  --output /app/data/archive \
+  --chunk-days 7 \
+  --sleep-seconds 2
+```
+
+Resume an interrupted backfill:
+
+```bash
+docker exec garmin-mcp python -m sync.backfill \
+  --start-date 2020-01-01 \
+  --end-date 2026-06-14 \
+  --output /app/data/archive
+```
+
+Use `--force` to ignore `backfill_checkpoint.json` and start from `--start-date` again. Activity details are fetched only when `/app/data/archive/activity_details/{activity_id}.json` does not already exist.
+
+Archive layout:
+
+```text
+/app/data/archive/
+├── manifest.json
+├── backfill_checkpoint.json
+├── daily/year=2026/month=06/daily.json
+├── sleep/year=2026/month=06/sleep.json
+├── hrv/year=2026/month=06/hrv.json
+├── stress/year=2026/month=06/stress.json
+├── body_battery/year=2026/month=06/body_battery.json
+├── activities/year=2026/month=06/activities.json
+└── activity_details/{activity_id}.json
 ```
 
 ## TrueNAS Notes
@@ -187,7 +246,7 @@ The existing `latest_sync_status.json`, `get_sync_status`, and `get_latest_activ
 If `/healthz` returns an error before the first sync, run:
 
 ```bash
-docker exec garmin-mcp python -m sync.main --days 7 --output /app/data --force-login
+docker exec garmin-mcp python -m sync.main --days 7 --output /app/data/latest --force-login
 ```
 
 If Garmin session reuse fails, keep the same `GARMIN_SESSION_KEY` and confirm `/app/secrets` is persistent.

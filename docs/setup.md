@@ -44,4 +44,4 @@ To preview a GCS upload without contacting Google Cloud:
 python -m sync.main --days 7 --output ./local-data --dry-run-upload
 ```
 
-For TrueNAS/self-hosted deployment, see [TRUENAS_DEPLOYMENT.md](TRUENAS_DEPLOYMENT.md).
+For TrueNAS/self-hosted deployment with `/app/data/latest` and historical archive backfill, see [TRUENAS_DEPLOYMENT.md](TRUENAS_DEPLOYMENT.md).

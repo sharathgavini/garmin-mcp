@@ -12,12 +12,12 @@ services:
       TZ: Asia/Kolkata
       PORT: "3000"
       GARMIN_DATA_MODE: local
-      GARMIN_DATA_DIR: /app/data
+      GARMIN_DATA_DIR: ${GARMIN_DATA_DIR:-/app/data/latest}
       GARMIN_SESSION_FILE: /app/secrets/.garmin-session.enc
       SYNC_DAYS: "30"
       RUN_INITIAL_SYNC: "false"
     volumes:
-      - ${HOST_DATA_DIR}:/app/data
-      - ${HOST_SECRETS_DIR}:/app/secrets
+      - ${HOST_DATA_DIR:-/mnt/scg_pool_1/apps/garmin-mcp/data}:/app/data
+      - ${HOST_SECRETS_DIR:-/mnt/scg_pool_1/apps/garmin-mcp/secrets}:/app/secrets
     ports:
       - "3000:3000"
