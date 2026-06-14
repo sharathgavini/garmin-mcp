@@ -1,0 +1,15 @@
+.env
+.env.*
+.garmin-session.enc
+.venv/
+local-data/
+sync-output/
+output/
+server/node_modules/
+server/dist/
+node_modules/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store

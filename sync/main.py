@@ -222,7 +222,7 @@ def main() -> None:
     parser.add_argument("--upload-gcs", action="store_true")
     parser.add_argument("--gcs-prefix", default=os.environ.get("GCS_PREFIX", "latest"))
     parser.add_argument("--dry-run-upload", action="store_true")
-    parser.add_argument("--session-file", type=Path, default=DEFAULT_SESSION_FILE)
+    parser.add_argument("--session-file", type=Path, default=Path(os.environ.get("GARMIN_SESSION_FILE", str(DEFAULT_SESSION_FILE))))
     parser.add_argument("--force-login", action="store_true")
     args = parser.parse_args()
     run_sync(

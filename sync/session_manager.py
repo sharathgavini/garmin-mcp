@@ -7,7 +7,7 @@ from garminconnect import Garmin
 
 from .crypto import SessionCryptoError, decrypt_session, encrypt_session
 
-DEFAULT_SESSION_FILE = Path(".garmin-session.enc")
+DEFAULT_SESSION_FILE = Path(os.environ.get("GARMIN_SESSION_FILE", ".garmin-session.enc"))
 
 
 def load_session(session_file: Path = DEFAULT_SESSION_FILE) -> str | None:

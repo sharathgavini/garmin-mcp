@@ -1,0 +1,27 @@
+services:
+  garmin-mcp:
+    container_name: garmin-mcp
+    build:
+      context: .
+      dockerfile: Dockerfile.selfhost
+    restart: unless-stopped
+    env_file:
+      - path: .env.selfhost
+        required: false
+    environment:
+      TZ: Asia/Kolkata
+      PORT: "3000"
+      GARMIN_DATA_MODE: local
+      GARMIN_DATA_DIR: /app/data
+      GARMIN_SESSION_FILE: /app/secrets/.garmin-session.enc
+      SYNC_DAYS: "30"
+      RUN_INITIAL_SYNC: "false"
+    volumes:
+      - garmin-data:/app/data
+      - garmin-secrets:/app/secrets
+    ports:
+      - "3000:3000"
+
+volumes:
+  garmin-data:
+  garmin-secrets:

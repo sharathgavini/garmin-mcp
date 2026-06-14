@@ -28,3 +28,5 @@ The local server exposes:
 - `POST /mcp` with `Authorization: Bearer dev-token`
 
 See [docs/setup.md](docs/setup.md) and [docs/deployment.md](docs/deployment.md).
+
+For TrueNAS/self-hosted deployment behind Cloudflare Tunnel, see [docs/TRUENAS_DEPLOYMENT.md](docs/TRUENAS_DEPLOYMENT.md).
