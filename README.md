@@ -12,11 +12,12 @@ The project has two main parts:
 If you are new to this project, read these in order:
 
 1. [Getting Started](docs/GETTING_STARTED.md)
-2. [Architecture](docs/ARCHITECTURE.md)
-3. [Design](docs/DESIGN.md)
-4. [MCP Tools](docs/MCP_TOOLS.md)
-5. [Agent Guide](docs/AGENTS.md)
-6. [TrueNAS Deployment](docs/TRUENAS_DEPLOYMENT.md)
+2. [End-to-End Guide](docs/END_TO_END.md)
+3. [Architecture](docs/ARCHITECTURE.md)
+4. [Design](docs/DESIGN.md)
+5. [MCP Tools](docs/MCP_TOOLS.md)
+6. [Agent Guide](docs/AGENTS.md)
+7. [TrueNAS Deployment](docs/TRUENAS_DEPLOYMENT.md)
 
 ## Repository Layout
 
