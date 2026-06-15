@@ -20,6 +20,7 @@ Current core capabilities:
 - Incremental `sync_now` wrapper via `python -m sync.sync_now` with cooldown, lookback, sync state, and watermark status
 - Archive partition manifests and weekly/monthly rollups via `python -m sync.archive_maintenance`
 - Field projection on archive range and health tools
+- Manifest-backed per-dataset capability discovery through `get_data_capabilities.datasets`
 - Normalized `schema_version` fields plus version-gated `sync.renormalize --since-version`
 - Retry/backoff around Garmin API reads in sync and backfill paths
 - Resumable activity-detail repair using `activity_detail_repair_status.json`
@@ -28,6 +29,8 @@ Current core capabilities:
 - Garmin-preferred source rules for duplicate external activity metrics
 - Nullable/optional date-range `end_date` schemas for single-day queries
 - Single-date sleep, HRV, and recovery tools
+
+Part 5 incremental `sync_now` is wired into Part 4 maintenance: delta runs write `sync_checkpoint.json`, update `partition_manifest.json`, run manifest verification, and rely on the same schema-versioned normalized rows that full sync/backfill writes.
 
 Current deployment preference:
 

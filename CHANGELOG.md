@@ -17,3 +17,4 @@
 - Added archive partition manifests, weekly/monthly rollups, field projection, and cheap capability metadata from archive indexes.
 - Added normalized `schema_version` fields, version-gated renormalization with stale-rollup marking, Garmin API retry/backoff, and resumable activity-detail repair status.
 - Added normalized write validation guardrails, `validation_rejections.json`, canonical unit/timezone metadata, local-day rollup metadata, and Garmin-preferred source rules.
+- Added manifest-backed per-dataset capability discovery plus incremental `sync_now` manifest verification and checkpoint resume ties.

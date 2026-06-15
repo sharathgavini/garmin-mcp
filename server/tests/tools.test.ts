@@ -10,8 +10,56 @@ import { LocalDataReader } from "../src/data.js";
 import { filterByDateRange } from "../src/date.js";
 import { createToolHandlers, inputSchemas, inputShapes } from "../src/tools.js";
 import { classifySport } from "../src/sports.js";
+import type { ArchiveCollectionResult, GarminDataReader, JsonObject, Manifest } from "../src/types.js";
 
 const sampleDir = path.resolve(process.cwd(), "../sample-data");
+
+class ManifestOnlyReader implements GarminDataReader {
+  archiveScanCount = 0;
+
+  constructor(
+    private readonly partitionManifest: JsonObject,
+    private readonly rollupManifest: JsonObject = {}
+  ) {}
+
+  async readManifest(): Promise<Manifest> {
+    return { date_range: { start: "2026-06-10", end: "2026-06-14" } };
+  }
+
+  async readCollection(): Promise<JsonObject[]> {
+    return [];
+  }
+
+  async readArchiveCollection(): Promise<ArchiveCollectionResult> {
+    this.archiveScanCount += 1;
+    throw new Error("archive scan should not run");
+  }
+
+  async readJson<T>(requestedPath: string): Promise<T> {
+    if (requestedPath === "../archive/partition_manifest.json") {
+      return this.partitionManifest as T;
+    }
+    if (requestedPath === "../archive/rollups/manifest.json") {
+      return this.rollupManifest as T;
+    }
+    throw new Error(`unexpected readJson path ${requestedPath}`);
+  }
+
+  async readActivityDetail(): Promise<JsonObject | null> {
+    this.archiveScanCount += 1;
+    throw new Error("activity detail scan should not run");
+  }
+
+  async readActivityStream(): Promise<JsonObject | null> {
+    this.archiveScanCount += 1;
+    throw new Error("activity stream scan should not run");
+  }
+
+  async readArchiveActivities(): Promise<JsonObject[]> {
+    this.archiveScanCount += 1;
+    throw new Error("archive activity scan should not run");
+  }
+}
 
 async function createArchiveFixture() {
   // Build a throwaway latest/archive tree that mirrors the TrueNAS layout.
@@ -702,6 +750,69 @@ describe("tool handlers", () => {
     const result = await archiveHandlers.get_data_capabilities();
     assert.equal(((result.structuredContent.archive_index as Record<string, unknown>).datasets as Record<string, Record<string, unknown>>).daily.record_count, 3);
     assert.equal((result.structuredContent.rollups as Record<string, unknown>).schema_version, "archive_rollups_v1");
+  });
+
+  it("returns manifest-backed per-dataset capabilities without scanning archive data", async () => {
+    const reader = new ManifestOnlyReader(
+      {
+        generated_at: "2026-06-15T06:00:00Z",
+        schema_version: "archive_rollups_v1",
+        datasets: {
+          daily: { record_count: 3, date_bounds: { start: "2026-06-01", end: "2026-06-03" } },
+          sleep: { record_count: 0, date_bounds: { start: null, end: null } },
+          hrv: { record_count: 2, date_bounds: { start: "2026-06-01", end: "2026-06-02" } },
+          stress: { record_count: 1, date_bounds: { start: "2026-06-01", end: "2026-06-01" } },
+          body_battery: { record_count: 1, date_bounds: { start: "2026-06-01", end: "2026-06-01" } },
+          activities: { record_count: 5, date_bounds: { start: "2026-05-20", end: "2026-06-14" } }
+        },
+        activity_streams: { record_count: 5 },
+        activity_details: { record_count: 4 }
+      },
+      { generated_at: "2026-06-15T06:01:00Z", schema_version: "archive_rollups_v1" }
+    );
+
+    const result = await createToolHandlers(reader).get_data_capabilities();
+    const datasets = result.structuredContent.datasets as Record<string, Record<string, unknown>>;
+
+    assert.equal(reader.archiveScanCount, 0);
+    assert.equal(result.structuredContent.capabilities_source, "partition_manifest");
+    assert.equal(result.structuredContent.current_schema_version, "archive_rollups_v1");
+    assert.equal(result.structuredContent.manifest_generated_at, "2026-06-15T06:00:00Z");
+    assert.deepEqual(datasets.daily, { earliest_date: "2026-06-01", latest_date: "2026-06-03", record_count: 3 });
+    assert.deepEqual(datasets.sleep, { earliest_date: null, latest_date: null, record_count: 0 });
+    assert.deepEqual(datasets.activity_streams, { earliest_date: null, latest_date: null, record_count: 5 });
+  });
+
+  it("can plan a non-empty query from reported manifest bounds", async () => {
+    const { latest } = await createArchiveFixture();
+    const archive = path.join(path.dirname(latest), "archive");
+    await writeFile(
+      path.join(archive, "partition_manifest.json"),
+      JSON.stringify({
+        generated_at: "2026-06-15T06:00:00Z",
+        schema_version: "archive_rollups_v1",
+        datasets: {
+          activities: {
+            record_count: 5,
+            date_bounds: { start: "2026-04-20", end: "2026-06-14" },
+            dates: {
+              "2026-06-14": { partition: "activities/year=2026/month=06/activities.json", record_count: 1 }
+            }
+          }
+        },
+        activity_streams: { record_count: 1 },
+        activity_details: { record_count: 0 }
+      })
+    );
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const capabilities = await archiveHandlers.get_data_capabilities();
+    const activities = (capabilities.structuredContent.datasets as Record<string, Record<string, string>>).activities;
+    const result = await archiveHandlers.get_activities_by_date_range({
+      start_date: activities.latest_date,
+      end_date: activities.latest_date
+    });
+
+    assert.equal((result.structuredContent.activities as unknown[]).length, 1);
   });
 
   it("returns structured no-data errors for empty ranges", async () => {

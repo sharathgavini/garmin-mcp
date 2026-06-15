@@ -35,10 +35,29 @@ def run_incremental_sync(
 ) -> dict[str, Any]:
     current = now or datetime.now(timezone.utc)
     state_path = sync_state_path(output)
+    checkpoint_path = sync_checkpoint_path(output)
     state = read_json(state_path) or {}
+    checkpoint = read_json(checkpoint_path) or {}
     before = {dataset: dataset_state(state, dataset).get("last_synced_at") for dataset in DATASETS}
-    run_type = determine_run_type(state, current, full=full, force=force, min_interval_minutes=min_interval_minutes)
-    days_to_fetch = compute_days_to_fetch(state, current.date(), requested_days=days, run_type=run_type, lookback_days=lookback_days)
+    if should_resume_checkpoint(checkpoint, full=full, force=force):
+        run_type = str(checkpoint.get("run_type") or "delta")
+        days_to_fetch = int(checkpoint.get("days_requested") or days)
+    else:
+        run_type = determine_run_type(state, current, full=full, force=force, min_interval_minutes=min_interval_minutes)
+        days_to_fetch = compute_days_to_fetch(state, current.date(), requested_days=days, run_type=run_type, lookback_days=lookback_days)
+
+    write_json(
+        checkpoint_path,
+        {
+            "status": "running",
+            "started_at": current.isoformat(),
+            "updated_at": current.isoformat(),
+            "run_type": run_type,
+            "days_requested": days_to_fetch,
+            "lookback_days": lookback_days,
+            "dataset_watermarks_before": before,
+        },
+    )
 
     run_sync(
         days=days_to_fetch,
@@ -51,13 +70,16 @@ def run_incremental_sync(
         session_file=session_file,
     )
     try:
-        from .archive_maintenance import build_partition_manifest
+        from .archive_maintenance import build_partition_manifest, verify_partition_manifest
 
         archive = output.resolve().parent / "archive"
         if archive.exists():
             build_partition_manifest(archive)
+            manifest_verify = verify_partition_manifest(archive)
+        else:
+            manifest_verify = None
     except Exception:
-        pass
+        manifest_verify = None
 
     completed = datetime.now(timezone.utc)
     after = {dataset: completed.isoformat() for dataset in DATASETS}
@@ -84,13 +106,38 @@ def run_incremental_sync(
             }
             for dataset in DATASETS
         },
+        "partition_manifest_verify": manifest_verify,
     }
     write_json(latest_status_path, latest_status | delta_status)
+    write_json(
+        checkpoint_path,
+        {
+            "status": "success",
+            "started_at": checkpoint.get("started_at") if should_resume_checkpoint(checkpoint, full=full, force=force) else current.isoformat(),
+            "completed_at": completed.isoformat(),
+            "updated_at": completed.isoformat(),
+            "run_type": run_type,
+            "days_requested": days_to_fetch,
+            "lookback_days": lookback_days,
+            "dataset_watermarks_before": before,
+            "dataset_watermarks_after": after,
+        },
+    )
     return latest_status | delta_status
 
 
 def sync_state_path(output: Path) -> Path:
     return output.resolve().parent / "archive" / "sync_state.json"
+
+
+def sync_checkpoint_path(output: Path) -> Path:
+    return output.resolve().parent / "archive" / "sync_checkpoint.json"
+
+
+def should_resume_checkpoint(checkpoint: dict[str, Any], *, full: bool, force: bool) -> bool:
+    if full or force:
+        return False
+    return checkpoint.get("status") in {"running", "failed"} and checkpoint.get("days_requested") is not None
 
 
 def determine_run_type(state: dict[str, Any], now: datetime, *, full: bool, force: bool, min_interval_minutes: int) -> str:

@@ -458,6 +458,53 @@ function datasetCoverage(name: string, rows: JsonObject[], historyStart: string 
   };
 }
 
+const capabilityDatasets = ["daily", "sleep", "hrv", "stress", "body_battery", "activities", "activity_streams", "activity_details"] as const;
+
+function capabilitiesFromPartitionManifest(partitionManifest: JsonObject | null, rollupManifest: JsonObject | null): JsonObject | null {
+  if (!partitionManifest || typeof partitionManifest !== "object") {
+    return null;
+  }
+  const manifestDatasets = (partitionManifest.datasets as JsonObject | undefined) ?? {};
+  const datasetEntries = Object.fromEntries(
+    capabilityDatasets.map((dataset) => {
+      if (dataset === "activity_streams" || dataset === "activity_details") {
+        const entry = partitionManifest[dataset] as JsonObject | undefined;
+        return [
+          dataset,
+          {
+            earliest_date: null,
+            latest_date: null,
+            record_count: Number(entry?.record_count ?? 0)
+          }
+        ];
+      }
+      const entry = manifestDatasets[dataset] as JsonObject | undefined;
+      const bounds = (entry?.date_bounds as JsonObject | undefined) ?? {};
+      return [
+        dataset,
+        {
+          earliest_date: typeof bounds.start === "string" ? bounds.start : null,
+          latest_date: typeof bounds.end === "string" ? bounds.end : null,
+          record_count: Number(entry?.record_count ?? 0)
+        }
+      ];
+    })
+  ) as Record<string, JsonObject>;
+  const datedBounds = Object.values(datasetEntries)
+    .flatMap((entry) => [entry.earliest_date, entry.latest_date])
+    .filter((value): value is string => typeof value === "string")
+    .sort();
+  return {
+    generated_at: partitionManifest.generated_at ?? null,
+    current_schema_version: partitionManifest.schema_version ?? null,
+    rollup_schema_version: rollupManifest?.schema_version ?? null,
+    rollup_generated_at: rollupManifest?.generated_at ?? null,
+    history_start: datedBounds[0] ?? null,
+    history_end: datedBounds[datedBounds.length - 1] ?? null,
+    datasets: datasetEntries
+  };
+}
+
 function recoveryReadiness(sleep: JsonObject | null, hrv: JsonObject | null, stress: JsonObject | null, bodyBattery: JsonObject | null): JsonObject {
   // This is the AI-facing recovery contract: if any required signal is absent,
   // clients should say what is missing instead of pretending recovery is complete.
@@ -969,10 +1016,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
   async function capabilities(): Promise<JsonObject> {
     // Capability discovery answers "what data do I have?" before clients choose tools.
-    const [manifest, latestActivities, archiveActivitiesRows, latestDaily, latestSleep, latestHrv, latestBodyBattery, latestStress, syncStatus, partitionManifest, rollupManifest] = await Promise.all([
+    const [manifest, latestActivities, latestDaily, latestSleep, latestHrv, latestBodyBattery, latestStress, syncStatus, partitionManifest, rollupManifest] = await Promise.all([
       reader.readManifest().catch(() => ({} as Manifest)),
       reader.readCollection("activities").catch(() => [] as JsonObject[]),
-      reader.readArchiveActivities ? reader.readArchiveActivities() : Promise.resolve([] as JsonObject[]),
       reader.readCollection("daily").catch(() => [] as JsonObject[]),
       reader.readCollection("sleep").catch(() => [] as JsonObject[]),
       reader.readCollection("hrv").catch(() => [] as JsonObject[]),
@@ -982,6 +1028,107 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       reader.readJson<JsonObject>("../archive/partition_manifest.json").catch(() => null),
       reader.readJson<JsonObject>("../archive/rollups/manifest.json").catch(() => null)
     ]);
+    const manifestCapabilities = capabilitiesFromPartitionManifest(partitionManifest, rollupManifest);
+    if (manifestCapabilities) {
+      const datasets = manifestCapabilities.datasets as Record<string, JsonObject>;
+      const historyStart = manifestCapabilities.history_start as string | null;
+      const historyEnd = manifestCapabilities.history_end as string | null;
+      const latestBounds = dateBounds([...latestDaily, ...latestSleep, ...latestHrv, ...latestStress, ...latestBodyBattery, ...latestActivities]);
+      const healthDatasetStats = Object.fromEntries(
+        healthDatasets.map((dataset) => [
+          dataset,
+          {
+            dataset,
+            available: Number(datasets[dataset]?.record_count ?? 0) > 0,
+            record_count: Number(datasets[dataset]?.record_count ?? 0),
+            date_bounds: {
+              start: datasets[dataset]?.earliest_date ?? null,
+              end: datasets[dataset]?.latest_date ?? null
+            },
+            coverage: null,
+            date_only_normalization: null
+          }
+        ])
+      );
+      const archiveStatistics = {
+        total_activities: Number(datasets.activities?.record_count ?? 0),
+        activities_by_sport: null,
+        date_coverage: historyStart && historyEnd ? {
+          days_requested: inclusiveDays(historyStart, historyEnd),
+          days_found: null,
+          completeness_percent: null,
+          missing_dates: null,
+          missing_dates_truncated: null,
+          available_start_date: historyStart,
+          available_end_date: historyEnd
+        } : null,
+        stream_coverage: {
+          activities_checked: null,
+          activities_with_streams: Number(datasets.activity_streams?.record_count ?? 0),
+          completeness_percent: null
+        },
+        activity_detail_coverage: {
+          activities_checked: null,
+          activities_with_details: Number(datasets.activity_details?.record_count ?? 0),
+          completeness_percent: null
+        },
+        sleep_coverage: null,
+        hrv_coverage: null
+      };
+      return {
+        source: "archive",
+        sources_used: ["archive"],
+        capabilities_source: "partition_manifest",
+        manifest_generated_at: manifestCapabilities.generated_at,
+        current_schema_version: manifestCapabilities.current_schema_version,
+        rollup_schema_version: manifestCapabilities.rollup_schema_version,
+        rollup_generated_at: manifestCapabilities.rollup_generated_at,
+        datasets,
+        history: {
+          archive_start_date: historyStart,
+          archive_end_date: historyEnd,
+          latest_start_date: latestBounds.start ?? manifest.date_range?.start ?? null,
+          latest_end_date: latestBounds.end ?? manifest.date_range?.end ?? null,
+          total_days_available: historyStart && historyEnd ? inclusiveDays(historyStart, historyEnd) : 0
+        },
+        health_datasets: healthDatasetStats,
+        activity_datasets: {
+          activities: Number(datasets.activities?.record_count ?? 0) > 0,
+          activity_details: Number(datasets.activity_details?.record_count ?? 0) > 0,
+          activity_streams: Number(datasets.activity_streams?.record_count ?? 0) > 0,
+          raw_activity_details: null,
+          total_activity_count: Number(datasets.activities?.record_count ?? 0),
+          activities_checked_for_details: null,
+          activities_checked_for_streams: null
+        },
+        stream_fields_observed: null,
+        missing_or_optional_stream_fields: null,
+        sport_categories_observed: null,
+        archive_stats: archiveStatistics,
+        archive_index: partitionManifest,
+        rollups: rollupManifest,
+        last_sync: syncStatus,
+        history_start: historyStart,
+        history_end: historyEnd,
+        latest_data_coverage: manifest.date_range ?? null,
+        supported_health_datasets: healthDatasets,
+        sleep: Number(datasets.sleep?.record_count ?? 0) > 0,
+        hrv: Number(datasets.hrv?.record_count ?? 0) > 0,
+        body_battery: Number(datasets.body_battery?.record_count ?? 0) > 0,
+        stress: Number(datasets.stress?.record_count ?? 0) > 0,
+        raw_data_available: null,
+        activity_streams: Number(datasets.activity_streams?.record_count ?? 0) > 0,
+        stream_fields: null,
+        stream_field_aliases: streamFieldAliases,
+        supported_stream_fields: null,
+        supported_activity_types: null,
+        sports: null,
+        total_activity_count: Number(datasets.activities?.record_count ?? 0),
+        total_days_available: historyStart && historyEnd ? inclusiveDays(historyStart, historyEnd) : 0,
+        archive_statistics: archiveStatistics
+      };
+    }
+    const archiveActivitiesRows = reader.readArchiveActivities ? await reader.readArchiveActivities() : [] as JsonObject[];
     const activityMap = new Map<string, JsonObject>();
     for (const activity of [...archiveActivitiesRows, ...latestActivities]) {
       activityMap.set(activityId(activity) ?? JSON.stringify(activity), activity);

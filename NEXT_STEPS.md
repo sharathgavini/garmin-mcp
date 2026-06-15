@@ -13,6 +13,7 @@ Recommended next validation steps:
 9. Run historical backfill with activity details and streams enabled if archive stream coverage is incomplete.
 10. After normalizer schema changes, run `sync.renormalize --since-version 2` against latest and archive raw sleep/HRV files before rebuilding rollups.
 11. If `validation_rejections.json` appears, inspect the listed dataset/date/activity before relying on that rejected row.
+12. After `sync_now`, confirm `latest_sync_status.json.partition_manifest_verify.status` is `ok` or inspect `/app/data/archive/sync_checkpoint.json` if a delta was interrupted.
 
 Useful commands:
 

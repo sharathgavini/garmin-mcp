@@ -59,6 +59,8 @@ For AI clients, the recommended first calls are:
 Range-oriented tools accept explicit `start_date`/`end_date` or presets such as `last_14_days`, `last_30_days`, and `last_90_days`.
 If `end_date` is omitted or `null`, MCP defaults it to `start_date` for single-day safety and returns the resolved dates in the response.
 
+`get_data_capabilities` includes a manifest-backed `datasets` block for `daily`, `sleep`, `hrv`, `stress`, `body_battery`, `activities`, `activity_streams`, and `activity_details`. Each entry reports `earliest_date`, `latest_date`, and `record_count` from `partition_manifest.json`; values that cannot be derived cheaply are returned as `null` instead of scanning the archive.
+
 ## Common Commands
 
 Run Python tests:
@@ -109,6 +111,7 @@ python -m sync.sync_now --output ./local-data/latest --full
 ```
 
 `sync.sync_now` writes `/archive/sync_state.json` next to the latest directory and augments `latest_sync_status.json` with `run_type`, `dataset_watermarks`, fetched/upserted counts, lookback, and cooldown metadata.
+It also writes `/archive/sync_checkpoint.json`, refreshes `partition_manifest.json`, runs manifest verification, and preserves schema-versioned normalized rows so incremental runs stay consistent with full sync/backfill output.
 
 Build archive rollups and the partition manifest:
 

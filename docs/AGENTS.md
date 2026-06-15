@@ -50,6 +50,8 @@ Range-oriented tools can also use `date_range_preset`: `today`, `yesterday`, `la
 
 Call `get_data_capabilities` before broad analysis. It tells you the available history range, latest coverage, supported health datasets, supported activity types, stream fields, raw data availability, activity stream availability, total activity count, total days available, and archive statistics.
 
+Prefer the manifest-backed `datasets` block inside `get_data_capabilities` when planning date-range calls. It reports `earliest_date`, `latest_date`, and `record_count` for daily, sleep, HRV, stress, body battery, activities, activity streams, and activity details. If a bound is `null`, do not query that dataset/range unless the user explicitly asks you to investigate missing data.
+
 Call `get_system_status` before trusting recovery or historical analysis. It summarizes latest sync health, archive backfill status, available datasets, auth mode, and warnings for stale data, date-only sleep/HRV normalization, or missing streams.
 
 Call `get_tool_guide` when tool choice is unclear.
@@ -71,6 +73,7 @@ Normalized Garmin rows include canonical `units`, `timezone`, and `timezone_offs
 If `validation_rejections.json` exists in latest or archive data, some normalized rows were rejected because values were outside domain guardrails. Do not invent replacements; report the rejection and suggest inspecting raw payloads.
 
 `sync_now` now launches `python -m sync.sync_now`, which is incremental by default. Use `full: true` only when a complete pull is needed, and `force: true` to bypass the cooldown guard.
+Incremental sync writes `sync_checkpoint.json`, updates and verifies the archive partition manifest, and uses the same schema-versioned normalized rows as full sync/backfill.
 
 Every tool response includes `source` or `sources_used`. Do not infer whether data came from latest or archive if the response already says it.
 
