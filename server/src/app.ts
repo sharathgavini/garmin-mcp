@@ -49,7 +49,7 @@ export function createApp(
   function registerTools(server: McpServer) {
     const toolDescriptions: Record<ToolName, string> = {
       get_today_summary: "Return the daily Garmin summary for one date.",
-      get_range_summary: "Return compact sleep, HRV, stress, body battery, activity, and recovery trends for a recent date range. Reads latest/recent data only. For historical ranges beyond latest coverage, use get_archive_range_summary.",
+      get_range_summary: "Return compact sleep, HRV, stress, body battery, activity, and recovery trends for a recent date range. Dates use YYYY-MM-DD. For single-day queries, provide only start_date; end_date is optional and defaults to start_date. Reads latest/recent data only. For historical ranges beyond latest coverage, use get_archive_range_summary.",
       get_recent_activities: "Return recent Garmin activity summaries. Reads latest/recent data only. For arbitrary historical date ranges, use get_activities_by_date_range. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
       get_activity_detail: "Return one detailed Garmin activity summary. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
       get_coach_context: "Return compact Garmin context optimized for recent coaching context. For long-range history, use archive tools.",

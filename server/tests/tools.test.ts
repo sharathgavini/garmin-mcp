@@ -4,9 +4,11 @@ import { describe, it } from "node:test";
 import { EventEmitter } from "node:events";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
+import request from "supertest";
+import { createApp } from "../src/app.js";
 import { LocalDataReader } from "../src/data.js";
 import { filterByDateRange } from "../src/date.js";
-import { createToolHandlers, inputSchemas } from "../src/tools.js";
+import { createToolHandlers, inputSchemas, inputShapes } from "../src/tools.js";
 import { classifySport } from "../src/sports.js";
 
 const sampleDir = path.resolve(process.cwd(), "../sample-data");
@@ -120,6 +122,17 @@ describe("input validation", () => {
     );
   });
 
+  it("allows omitted, null, and explicit end_date on latest range summaries", () => {
+    const omitted = inputSchemas.get_range_summary.parse({ start_date: "2026-06-13" });
+    assert.equal(omitted.end_date, undefined);
+
+    const nulled = inputSchemas.get_range_summary.parse({ start_date: "2026-06-13", end_date: null });
+    assert.equal(nulled.end_date, null);
+
+    const explicit = inputSchemas.get_range_summary.parse({ start_date: "2026-06-12", end_date: "2026-06-13" });
+    assert.equal(explicit.end_date, "2026-06-13");
+  });
+
   it("allows null end_date on archive range tools and defaults in handlers", () => {
     const parsed = inputSchemas.get_health_metrics_by_date_range.parse({
       start_date: "2026-05-01",
@@ -127,7 +140,7 @@ describe("input validation", () => {
       metrics: ["sleep"]
     });
     assert.equal(parsed.start_date, "2026-05-01");
-    assert.equal(parsed.end_date, undefined);
+    assert.equal(parsed.end_date, null);
   });
 
   it("allows omitted end_date on archive range tools", () => {
@@ -146,6 +159,28 @@ describe("input validation", () => {
       })
     );
   });
+
+  it("rejects invalid end_date types while accepting nullable schema shape", () => {
+    for (const endDate of [123, {}, []]) {
+      assert.throws(() => inputSchemas.get_range_summary.parse({ start_date: "2026-06-13", end_date: endDate }));
+      assert.throws(() => inputSchemas.get_health_metrics_by_date_range.parse({ start_date: "2026-05-01", end_date: endDate }));
+    }
+    for (const shape of [
+      inputShapes.get_range_summary,
+      inputShapes.get_archive_range_summary,
+      inputShapes.get_health_metrics_by_date_range,
+      inputShapes.get_activities_by_date_range,
+      inputShapes.get_workouts_by_date_range,
+      inputShapes.analyze_training_period
+    ]) {
+      assert.equal(shape.end_date.safeParse(null).success, true);
+      assert.equal(shape.end_date.safeParse(undefined).success, true);
+      assert.equal(shape.end_date.safeParse("2026-06-13").success, true);
+      assert.equal(shape.end_date.safeParse(123).success, false);
+    }
+    assert.equal(inputShapes.compare_training_periods.period_a_end.safeParse(null).success, true);
+    assert.equal(inputShapes.compare_training_periods.period_b_end.safeParse(null).success, true);
+  });
 });
 
 describe("tool handlers", () => {
@@ -163,6 +198,15 @@ describe("tool handlers", () => {
       missing: false
       }
     );
+  });
+
+  it("defaults null end_date inside get_range_summary handler", async () => {
+    const parsed = inputSchemas.get_range_summary.parse({ start_date: "2026-06-13", end_date: null });
+    const result = await handlers.get_range_summary(parsed);
+    assert.equal(result.structuredContent.requested_start_date, "2026-06-13");
+    assert.equal(result.structuredContent.requested_end_date, "2026-06-13");
+    assert.deepEqual(result.structuredContent.defaults_applied, { end_date: "start_date" });
+    assert.equal(result.structuredContent.end_date, "2026-06-13");
   });
 
   it("handles missing activity details", async () => {
@@ -331,6 +375,48 @@ describe("tool handlers", () => {
     assert.match(appSource, /For arbitrary historical date ranges, use get_activities_by_date_range/);
     assert.match(appSource, /For long-range history, use archive tools/);
     assert.doesNotMatch(appSource, /Strava fallback/i);
+  });
+
+  it("MCP tools/list advertises nullable optional end_date", async () => {
+    const app = createApp({ reader: new LocalDataReader(sampleDir), bearerToken: "dev-token" });
+    const response = await request(app)
+      .post("/mcp")
+      .set("Authorization", "Bearer dev-token")
+      .set("Accept", "application/json, text/event-stream")
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+      .expect(200);
+    const event = response.text.split("\n").find((line) => line.startsWith("data:"));
+    assert.ok(event);
+    const payload = JSON.parse(event.slice("data:".length)) as { result: { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> } };
+    const tools = payload.result.tools;
+    const rangeTool = tools.find((tool) => tool.name === "get_range_summary");
+    assert.ok(rangeTool);
+    const schema = rangeTool.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
+    assert.equal(schema.required?.includes("end_date"), false);
+    assert.match(JSON.stringify(schema.properties?.end_date), /null/);
+  });
+
+  it("MCP tools/call accepts null end_date and applies the single-day default", async () => {
+    const app = createApp({ reader: new LocalDataReader(sampleDir), bearerToken: "dev-token" });
+    const response = await request(app)
+      .post("/mcp")
+      .set("Authorization", "Bearer dev-token")
+      .set("Accept", "application/json, text/event-stream")
+      .send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "get_range_summary",
+          arguments: { start_date: "2026-06-13", end_date: null }
+        }
+      })
+      .expect(200);
+    const event = response.text.split("\n").find((line) => line.startsWith("data:"));
+    assert.ok(event);
+    const payload = JSON.parse(event.slice("data:".length)) as { result: { structuredContent: Record<string, unknown> } };
+    assert.equal(payload.result.structuredContent.requested_end_date, "2026-06-13");
+    assert.deepEqual(payload.result.structuredContent.defaults_applied, { end_date: "start_date" });
   });
 
   it("selects month partitions and filters archive dates across months", async () => {

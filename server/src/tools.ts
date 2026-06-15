@@ -11,8 +11,9 @@ import type { GarminDataReader, JsonObject, Manifest } from "./types.js";
 import { allActivities, activityId, analyze, latestWorkout, shapeStream, streamCompleteness, summarizeWorkout, type StreamSource } from "./workouts.js";
 
 const isoDateSchema = z.string().refine(isIsoDate, "Use YYYY-MM-DD.");
-// Claude sometimes sends null for single-day range end dates; treat that as omitted.
-const optionalIsoDateSchema = z.preprocess((value) => (value === null ? undefined : value), isoDateSchema.optional());
+// Claude and MCP Inspector may send null for single-day range end dates; the
+// schema must advertise nullability instead of only fixing it in handlers.
+const optionalIsoDateSchema = isoDateSchema.nullable().optional();
 const daysSchema = z.number().int().min(1).max(30).default(14);
 const workoutDaysSchema = z.number().int().min(1).max(90).default(30);
 const streamSourceSchema = z.enum(["latest", "archive", "auto"]).default("auto");
@@ -44,7 +45,7 @@ export const inputShapes = {
   },
   get_range_summary: {
     start_date: isoDateSchema,
-    end_date: isoDateSchema
+    end_date: optionalIsoDateSchema
   },
   get_recent_activities: {
     days: daysSchema
@@ -153,8 +154,8 @@ export const inputSchemas = {
   get_today_summary: z.object(inputShapes.get_today_summary),
   get_range_summary: z
     .object(inputShapes.get_range_summary)
-    .refine((input) => input.start_date <= input.end_date, "start_date must be on or before end_date.")
-    .refine((input) => inclusiveDays(input.start_date, input.end_date) <= 30, "Date range cannot exceed 30 days."),
+    .refine((input) => input.start_date <= (input.end_date ?? input.start_date), "start_date must be on or before end_date.")
+    .refine((input) => inclusiveDays(input.start_date, input.end_date ?? input.start_date) <= 30, "Date range cannot exceed 30 days."),
   get_recent_activities: z.object(inputShapes.get_recent_activities),
   get_activity_detail: z.object(inputShapes.get_activity_detail),
   get_coach_context: z.object(inputShapes.get_coach_context),
@@ -199,7 +200,7 @@ function ok(data: JsonObject): { content: Array<{ type: "text"; text: string }>;
   };
 }
 
-type DateRangeInput = { start_date: string; end_date?: string; [key: string]: unknown };
+type DateRangeInput = { start_date: string; end_date?: string | null; [key: string]: unknown };
 const healthDatasets = ["daily", "sleep", "hrv", "stress", "body_battery"];
 
 function requestedRange(input: DateRangeInput): { startDate: string; endDate: string; requested_start_date: string; requested_end_date: string; defaults_applied: JsonObject } {
@@ -210,19 +211,19 @@ function requestedRange(input: DateRangeInput): { startDate: string; endDate: st
     endDate,
     requested_start_date: input.start_date,
     requested_end_date: endDate,
-    defaults_applied: input.end_date ? {} : { end_date: "start_date" }
+    defaults_applied: input.end_date == null ? { end_date: "start_date" } : {}
   };
 }
 
-function compareRange(input: { period_a_start: string; period_a_end?: string; period_b_start: string; period_b_end?: string }) {
+function compareRange(input: { period_a_start: string; period_a_end?: string | null; period_b_start: string; period_b_end?: string | null }) {
   return {
     periodAStart: input.period_a_start,
     periodAEnd: input.period_a_end ?? input.period_a_start,
     periodBStart: input.period_b_start,
     periodBEnd: input.period_b_end ?? input.period_b_start,
     defaults_applied: {
-      ...(input.period_a_end ? {} : { period_a_end: "period_a_start" }),
-      ...(input.period_b_end ? {} : { period_b_end: "period_b_start" })
+      ...(input.period_a_end == null ? { period_a_end: "period_a_start" } : {}),
+      ...(input.period_b_end == null ? { period_b_end: "period_b_start" } : {})
     }
   };
 }
@@ -767,6 +768,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_range_summary(input: z.infer<typeof inputSchemas.get_range_summary>) {
+      const range = requestedRange(input);
       const [daily, sleep, hrv, stress, bodyBattery, activities] = await Promise.all([
         safeCollection(reader, "daily"),
         safeCollection(reader, "sleep"),
@@ -776,8 +778,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         safeCollection(reader, "activities")
       ]);
 
-      const { start_date, end_date } = input;
-      const dailyRange = filterByDateRange(daily, start_date, end_date);
+      const { startDate, endDate } = range;
+      const dailyRange = filterByDateRange(daily, startDate, endDate);
       const readiness = dailyRange
         .map((row) => ({
           date: row.date,
@@ -788,13 +790,16 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         .filter((row) => row.training_readiness || row.acute_load || row.recovery_hours);
 
       return ok({
-        start_date,
-        end_date,
-        sleep_trend: filterByDateRange(sleep, start_date, end_date),
-        hrv_trend: filterByDateRange(hrv, start_date, end_date),
-        stress_trend: filterByDateRange(stress, start_date, end_date),
-        body_battery_trend: filterByDateRange(bodyBattery, start_date, end_date),
-        activities_summary: filterByDateRange(activities, start_date, end_date),
+        requested_start_date: range.requested_start_date,
+        requested_end_date: range.requested_end_date,
+        defaults_applied: range.defaults_applied,
+        start_date: startDate,
+        end_date: endDate,
+        sleep_trend: filterByDateRange(sleep, startDate, endDate),
+        hrv_trend: filterByDateRange(hrv, startDate, endDate),
+        stress_trend: filterByDateRange(stress, startDate, endDate),
+        body_battery_trend: filterByDateRange(bodyBattery, startDate, endDate),
+        activities_summary: filterByDateRange(activities, startDate, endDate),
         training_load_recovery_notes: readiness
       });
     },

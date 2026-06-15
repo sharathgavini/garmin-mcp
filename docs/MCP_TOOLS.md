@@ -36,7 +36,7 @@ Use archive tools for long historical ranges.
 Inputs:
 
 - `start_date`
-- `end_date`
+- `end_date` optional, nullable, defaults to `start_date`
 
 ### `get_recent_activities`
 
