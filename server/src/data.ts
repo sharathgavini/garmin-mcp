@@ -38,13 +38,12 @@ export class LocalDataReader implements GarminDataReader {
       throw new Error(`Unknown collection: ${name}`);
     }
     const rows: JsonObject[] = [];
-    const requested = monthPartitions(startDate, endDate);
+    const requested = await this.archivePartitionsFor(name, file, startDate, endDate);
     const loaded: string[] = [];
     const missing: string[] = [];
 
     // Only read month partitions that intersect the requested range.
-    for (const partition of requested) {
-      const relative = path.join(name, `year=${partition.year}`, `month=${partition.month}`, file);
+    for (const relative of requested) {
       const fullPath = path.join(this.archiveDir(), relative);
       try {
         const parsed = JSON.parse(await fs.readFile(fullPath, "utf8")) as unknown;
@@ -77,7 +76,7 @@ export class LocalDataReader implements GarminDataReader {
       end_date: endDate,
       rows: filtered,
       coverage: {
-        requested_partitions: requested.map((partition) => path.join(name, `year=${partition.year}`, `month=${partition.month}`, file)),
+        requested_partitions: requested,
         loaded_partitions: loaded,
         missing_partitions: missing,
         available_start_date: availableDates[0] ?? null,
@@ -171,6 +170,28 @@ export class LocalDataReader implements GarminDataReader {
   private archiveDir(): string {
     // In self-hosted mode GARMIN_DATA_DIR points at /app/data/latest; archive is its sibling.
     return path.resolve(this.baseDir, "..", "archive");
+  }
+
+  private async archivePartitionsFor(name: string, file: string, startDate: string, endDate: string): Promise<string[]> {
+    try {
+      const raw = await fs.readFile(path.join(this.archiveDir(), "partition_manifest.json"), "utf8");
+      const manifest = JSON.parse(raw) as JsonObject;
+      const dataset = (manifest.datasets as JsonObject | undefined)?.[name] as JsonObject | undefined;
+      const dates = dataset?.dates as JsonObject | undefined;
+      if (dates) {
+        const partitions = new Set<string>();
+        for (const date of eachDate(startDate, endDate)) {
+          const entry = dates[date] as JsonObject | undefined;
+          if (typeof entry?.partition === "string") {
+            partitions.add(entry.partition);
+          }
+        }
+        return [...partitions].sort();
+      }
+    } catch {
+      // Older archives do not have a partition manifest yet.
+    }
+    return monthPartitions(startDate, endDate).map((partition) => path.join(name, `year=${partition.year}`, `month=${partition.month}`, file));
   }
 }
 

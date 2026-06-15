@@ -360,6 +360,29 @@ Incremental state is stored at:
 
 Status includes `run_type`, per-dataset watermarks, records fetched/upserted, lookback days, and cooldown settings.
 
+## Archive Rollups and Manifest
+
+Archive maintenance writes:
+
+```text
+/app/data/archive/partition_manifest.json
+/app/data/archive/partition_manifest_verify.json
+/app/data/archive/rollups/manifest.json
+/app/data/archive/rollups/weekly/YYYY-Www.json
+/app/data/archive/rollups/monthly/YYYY-MM.json
+/app/data/archive/rollups/sleep_weekly/YYYY-Www.json
+```
+
+Rebuild on demand:
+
+```bash
+docker exec garmin-mcp python -m sync.archive_maintenance \
+  --output /app/data/archive \
+  --start-date 2026-03-18 \
+  --end-date 2026-06-14 \
+  --verify-manifest
+```
+
 The existing bearer/OAuth protections remain required.
 
 ## OAuth Remote MCP Auth

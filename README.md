@@ -101,6 +101,14 @@ python -m sync.sync_now --output ./local-data/latest --full
 
 `sync.sync_now` writes `/archive/sync_state.json` next to the latest directory and augments `latest_sync_status.json` with `run_type`, `dataset_watermarks`, fetched/upserted counts, lookback, and cooldown metadata.
 
+Build archive rollups and the partition manifest:
+
+```bash
+python -m sync.archive_maintenance --output ./local-data/archive --start-date 2026-03-18 --end-date 2026-06-14 --verify-manifest
+```
+
+Archive range tools support optional `fields` projection so agents can request compact responses.
+
 ## Supported Deployment Modes
 
 - Local development with `sample-data/`

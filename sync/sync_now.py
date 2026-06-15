@@ -50,6 +50,14 @@ def run_incremental_sync(
         force_refresh=force_refresh or full or force,
         session_file=session_file,
     )
+    try:
+        from .archive_maintenance import build_partition_manifest
+
+        archive = output.resolve().parent / "archive"
+        if archive.exists():
+            build_partition_manifest(archive)
+    except Exception:
+        pass
 
     completed = datetime.now(timezone.utc)
     after = {dataset: completed.isoformat() for dataset in DATASETS}

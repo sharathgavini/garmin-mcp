@@ -88,6 +88,12 @@ def run_repair(
         "failures": failures,
     }
     write_json(output / STATUS_FILE, status)
+    try:
+        from .archive_maintenance import build_partition_manifest
+
+        build_partition_manifest(output)
+    except Exception:
+        pass
     return status
 
 

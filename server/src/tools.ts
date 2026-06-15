@@ -142,17 +142,20 @@ export const inputShapes = {
     ...archiveActivityFilterShape,
     limit: z.number().int().min(1).max(1000).default(100),
     include_details: z.boolean().default(false),
-    include_stream_availability: z.boolean().default(true)
+    include_stream_availability: z.boolean().default(true),
+    fields: z.array(z.string()).optional()
   },
   get_workouts_by_date_range: {
     ...archiveActivityFilterShape,
     limit: z.number().int().min(1).max(1000).default(100),
     include_details: z.boolean().default(false),
-    include_stream_availability: z.boolean().default(true)
+    include_stream_availability: z.boolean().default(true),
+    fields: z.array(z.string()).optional()
   },
   get_health_metrics_by_date_range: {
     ...archiveRangeShape,
-    metrics: z.array(z.enum(["daily", "sleep", "hrv", "stress", "body_battery"])).optional()
+    metrics: z.array(z.enum(["daily", "sleep", "hrv", "stress", "body_battery"])).optional(),
+    fields: z.array(z.string()).optional()
   },
   get_sleep_for_date: {
     date: isoDateSchema,
@@ -618,6 +621,14 @@ function missingDaysForRows(startDate: string, endDate: string, rows: JsonObject
   return eachDate(startDate, endDate).filter((date) => !dates.has(date));
 }
 
+function projectRows(rows: JsonObject[], fields?: string[]): JsonObject[] {
+  if (!fields || fields.length === 0) {
+    return rows;
+  }
+  const keep = new Set(fields);
+  return rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => keep.has(key))));
+}
+
 // Build the compact activity shape returned by range tools without embedding full streams.
 function compactActivity(activity: JsonObject, detail: JsonObject | null, stream: JsonObject | null): JsonObject {
   return {
@@ -958,7 +969,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
   async function capabilities(): Promise<JsonObject> {
     // Capability discovery answers "what data do I have?" before clients choose tools.
-    const [manifest, latestActivities, archiveActivitiesRows, latestDaily, latestSleep, latestHrv, latestBodyBattery, latestStress, syncStatus] = await Promise.all([
+    const [manifest, latestActivities, archiveActivitiesRows, latestDaily, latestSleep, latestHrv, latestBodyBattery, latestStress, syncStatus, partitionManifest, rollupManifest] = await Promise.all([
       reader.readManifest().catch(() => ({} as Manifest)),
       reader.readCollection("activities").catch(() => [] as JsonObject[]),
       reader.readArchiveActivities ? reader.readArchiveActivities() : Promise.resolve([] as JsonObject[]),
@@ -967,7 +978,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       reader.readCollection("hrv").catch(() => [] as JsonObject[]),
       reader.readCollection("body_battery").catch(() => [] as JsonObject[]),
       reader.readCollection("stress").catch(() => [] as JsonObject[]),
-      readSyncStatus()
+      readSyncStatus(),
+      reader.readJson<JsonObject>("../archive/partition_manifest.json").catch(() => null),
+      reader.readJson<JsonObject>("../archive/rollups/manifest.json").catch(() => null)
     ]);
     const activityMap = new Map<string, JsonObject>();
     for (const activity of [...archiveActivitiesRows, ...latestActivities]) {
@@ -1072,6 +1085,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       missing_or_optional_stream_fields: missingOrOptionalStreamFields,
       sport_categories_observed: Object.keys(activitiesBySport).sort(),
       archive_stats: archiveStatistics,
+      archive_index: partitionManifest,
+      rollups: rollupManifest,
       last_sync: syncStatus,
       history_start: historyStart,
       history_end: historyEnd,
@@ -1935,8 +1950,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         total_matches: activities.length,
         returned: enriched.length,
         limit: input.limit,
+        projected_fields: input.fields ?? null,
         archive_coverage: result.coverage,
-        activities: enriched
+        activities: projectRows(enriched, input.fields)
       });
     },
 
@@ -1960,8 +1976,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         total_matches: activities.length,
         returned: enriched.length,
         limit: input.limit,
+        projected_fields: input.fields ?? null,
         archive_coverage: result.coverage,
-        workouts: enriched
+        workouts: projectRows(enriched, input.fields)
       });
     },
 
@@ -1978,7 +1995,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok({
         ...rangeMetadata(range, rows),
         date_range: { start: range.startDate, end: range.endDate },
-        metrics: Object.fromEntries(Object.entries(results).map(([name, result]) => [name, { records: result.rows, coverage: result.coverage }])),
+        projected_fields: input.fields ?? null,
+        metrics: Object.fromEntries(Object.entries(results).map(([name, result]) => [name, { records: projectRows(result.rows, input.fields), coverage: result.coverage }])),
         warnings: Object.fromEntries(Object.entries(results).map(([name, result]) => [name, result.coverage.warnings]))
       });
     },

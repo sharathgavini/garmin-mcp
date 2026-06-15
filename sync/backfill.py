@@ -104,6 +104,7 @@ def run_backfill(
 
         manifest = generate_archive_manifest(output, start, end)
         write_json(output / "manifest.json", manifest | {"backfill_status": "success"})
+        refresh_archive_indexes(output, start, end)
         write_checkpoint(
             checkpoint_path,
             status="success",
@@ -405,6 +406,14 @@ def bool_arg(value: str) -> bool:
     if lowered in {"0", "false", "no", "off"}:
         return False
     raise argparse.ArgumentTypeError("Use true or false.")
+
+
+def refresh_archive_indexes(output: Path, start: date, end: date) -> None:
+    # Import lazily to avoid a module cycle: archive_maintenance reuses backfill helpers.
+    from .archive_maintenance import build_partition_manifest, build_rollups
+
+    build_partition_manifest(output)
+    build_rollups(output, start.isoformat(), end.isoformat())
 
 
 def main() -> None:

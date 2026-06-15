@@ -14,3 +14,4 @@
 - Added incremental `sync.sync_now` wrapper with sync state, cooldown-light runs, lookback windows, and per-dataset watermark status.
 - Documented null `end_date` defaulting to `start_date` for single-day range safety.
 - Added `resolution_seconds` stream decimation for lightweight workout overview queries.
+- Added archive partition manifests, weekly/monthly rollups, field projection, and cheap capability metadata from archive indexes.

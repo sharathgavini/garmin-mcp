@@ -18,6 +18,8 @@ Current core capabilities:
 - Targeted archive activity-detail repair via `python -m sync.repair_activity_details`
 - Structured stream field errors and aliases for `get_activity_streams`
 - Incremental `sync_now` wrapper via `python -m sync.sync_now` with cooldown, lookback, sync state, and watermark status
+- Archive partition manifests and weekly/monthly rollups via `python -m sync.archive_maintenance`
+- Field projection on archive range and health tools
 - Nullable/optional date-range `end_date` schemas for single-day queries
 - Single-date sleep, HRV, and recovery tools
 

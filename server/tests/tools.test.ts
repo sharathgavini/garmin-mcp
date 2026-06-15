@@ -506,6 +506,27 @@ describe("tool handlers", () => {
     assert.equal(result.coverage.available_end_date, "2026-06-14");
   });
 
+  it("uses partition manifest when present for archive reads", async () => {
+    const { latest } = await createArchiveFixture();
+    const archive = path.join(path.dirname(latest), "archive");
+    await writeFile(
+      path.join(archive, "partition_manifest.json"),
+      JSON.stringify({
+        datasets: {
+          activities: {
+            dates: {
+              "2026-05-04": { partition: "activities/year=2026/month=05/activities.json", record_count: 1 }
+            }
+          }
+        }
+      })
+    );
+    const reader = new LocalDataReader(latest);
+    const result = await reader.readArchiveCollection("activities", "2026-05-04", "2026-05-04");
+    assert.deepEqual(result.coverage.requested_partitions, ["activities/year=2026/month=05/activities.json"]);
+    assert.equal(result.rows.length, 1);
+  });
+
   it("reports missing archive partitions and coverage warnings", async () => {
     const { latest } = await createArchiveFixture();
     const reader = new LocalDataReader(latest);
@@ -641,6 +662,46 @@ describe("tool handlers", () => {
     assert.equal(metrics.daily.records.length, 3);
     assert.equal(metrics.hrv.records.length, 1);
     assert.ok(metrics.hrv.coverage.warnings.length > 0);
+  });
+
+  it("projects archive health and activity fields when requested", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const activities = await archiveHandlers.get_activities_by_date_range({
+      start_date: "2026-05-01",
+      end_date: "2026-05-31",
+      limit: 10,
+      include_details: false,
+      include_stream_availability: false,
+      fields: ["id", "date"]
+    });
+    const first = (activities.structuredContent.activities as Array<Record<string, unknown>>)[0];
+    assert.deepEqual(Object.keys(first).sort(), ["date", "id"]);
+    assert.deepEqual(activities.structuredContent.projected_fields, ["id", "date"]);
+
+    const health = await archiveHandlers.get_health_metrics_by_date_range({
+      start_date: "2026-05-01",
+      end_date: "2026-05-01",
+      metrics: ["sleep"],
+      fields: ["date", "sleep_score"]
+    });
+    const sleep = ((health.structuredContent.metrics as Record<string, { records: Array<Record<string, unknown>> }>).sleep.records)[0];
+    assert.deepEqual(Object.keys(sleep).sort(), ["date", "sleep_score"]);
+  });
+
+  it("reports cheap archive index and rollup metadata in capabilities", async () => {
+    const { latest } = await createArchiveFixture();
+    const archive = path.join(path.dirname(latest), "archive");
+    await mkdir(path.join(archive, "rollups"), { recursive: true });
+    await writeFile(
+      path.join(archive, "partition_manifest.json"),
+      JSON.stringify({ datasets: { daily: { record_count: 3, date_bounds: { start: "2026-05-01", end: "2026-06-01" } } } })
+    );
+    await writeFile(path.join(archive, "rollups", "manifest.json"), JSON.stringify({ schema_version: "archive_rollups_v1", written: ["rollups/weekly/2026-W23.json"] }));
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_data_capabilities();
+    assert.equal(((result.structuredContent.archive_index as Record<string, unknown>).datasets as Record<string, Record<string, unknown>>).daily.record_count, 3);
+    assert.equal((result.structuredContent.rollups as Record<string, unknown>).schema_version, "archive_rollups_v1");
   });
 
   it("returns structured no-data errors for empty ranges", async () => {

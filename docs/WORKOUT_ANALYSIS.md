@@ -31,6 +31,8 @@ Canonical stream field names include `heart_rate`, `cadence`, `speed_mps`, `powe
 
 For overview queries, pass `resolution_seconds` to `get_activity_streams`, `get_latest_workout_streams`, or `get_latest_ride_streams`. This keeps roughly one sample per N seconds and preserves first/last samples. Leave it unset for full-resolution streams.
 
+For archive range tools, pass `fields` to project only the columns needed for the answer. Omitting `fields` returns the full existing response shape.
+
 If activity details are missing but activity streams exist, run targeted repair:
 
 ```bash
