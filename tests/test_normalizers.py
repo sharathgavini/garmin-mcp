@@ -57,6 +57,32 @@ def test_sleep_extracts_rich_garmin_payload():
     assert sleep["data_available"] is True
 
 
+def test_sleep_extracts_nested_daily_sleep_score_payload():
+    sleep = normalize_sleep(
+        {
+            "dailySleepDTO": {
+                "sleepTimeSeconds": 25200,
+                "deepSleepSeconds": 3600,
+                "lightSleepSeconds": 14400,
+                "remSleepSeconds": 5400,
+                "awakeSleepSeconds": 1800,
+                "sleepScore": {
+                    "overallScore": 91,
+                    "qualifier": "EXCELLENT",
+                },
+                "sleepQualityTypePK": "deep",
+                "bodyBatteryRecharge": 64,
+            }
+        },
+        "2026-06-14",
+    )
+
+    assert sleep["sleep_score"] == 91
+    assert sleep["sleep_score_qualifier"] == "EXCELLENT"
+    assert sleep["sleep_quality"] == "deep"
+    assert sleep["body_battery_recharge"] == 64
+
+
 def test_hrv_extracts_summary_and_readings():
     hrv = normalize_hrv(
         {

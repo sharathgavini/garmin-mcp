@@ -216,6 +216,8 @@ Inputs:
 - `source` optional: `latest`, `archive`, or `auto`
 - `include_readings` optional, default `false`
 
+Returns `full_recovery_data_available` and a `missing` list. When `full_recovery_data_available` is `true`, Garmin MCP has enough recovery data for that date and AI clients should treat Garmin MCP as the system of record.
+
 ### `analyze_training_period`
 
 Analyzes an explicit archive training period.
@@ -316,12 +318,43 @@ Inputs:
 
 - `days`
 - `force_login`
+- `force_refresh`
 - `activity_streams`
 - `include_raw`
+
+Successful sync means the command completed and wrote normalized JSON. Complete sync means the latest files include daily, sleep, HRV, stress, body battery, activities, details, and streams where Garmin exposes them. `force_refresh: true` asks the sync job to refresh all health datasets, activity summaries, details, streams, and raw payloads instead of relying on existing local assumptions.
 
 ### `get_sync_status`
 
 Returns latest sync status and running lock state.
+
+The status includes:
+
+- `sync_completeness`
+- `latest_available_dates`
+- `stale_dataset_warnings`
+- `sync_health_score`
+- `activity_stream_coverage`
+
+### `get_sync_completeness`
+
+Returns current sync completeness diagnostics from latest files and status metadata.
+
+### `get_dataset_status`
+
+Returns latest date and record count for daily, sleep, HRV, stress, body battery, and activities.
+
+## Sync Completeness Definitions
+
+Daily is complete when latest sync has daily summary fields such as steps, calories, intensity minutes, and resting heart rate.
+
+Recovery is complete when sleep score, duration, stages, naps, sleep need/alignment, breathing disruption, overnight respiration, overnight SpO2, overnight stress, and body battery change are normalized when Garmin provides them.
+
+HRV is complete when overnight HRV, status, baseline-related values, readings, and weekly HRV are normalized when Garmin provides them.
+
+A stale dataset is sleep or HRV trailing the daily dataset by more than one day. Stale datasets appear in `stale_dataset_warnings`.
+
+Recovery readiness is exposed by `get_recovery_for_date.full_recovery_data_available`. If false, inspect `missing` before giving recovery advice.
 
 ### `health_check`
 

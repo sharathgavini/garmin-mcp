@@ -12,6 +12,7 @@ import type { JsonObject } from "./types.js";
 export interface SyncNowInput {
   days?: number;
   force_login?: boolean;
+  force_refresh?: boolean;
   activity_streams?: boolean;
   include_raw?: boolean;
 }
@@ -57,10 +58,15 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
     "--activity-streams",
     String(input.activity_streams ?? true),
     "--include-raw",
-    String(input.include_raw ?? true)
+    String(input.include_raw ?? true),
+    "--activity-details",
+    "true"
   ];
   if (input.force_login) {
     args.push("--force-login");
+  }
+  if (input.force_refresh) {
+    args.push("--force-refresh");
   }
 
   const spawnProcess = options.spawnProcess ?? spawn;
@@ -93,6 +99,7 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
     status: "started",
     job_id: jobId,
     started_at: startedAt,
+    force_refresh: input.force_refresh ?? false,
     message: "Sync started"
   };
 }

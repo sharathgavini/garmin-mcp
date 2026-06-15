@@ -60,9 +60,12 @@ export const inputShapes = {
   sync_now: {
     days: z.number().int().min(1).max(30).default(7),
     force_login: z.boolean().default(false),
+    force_refresh: z.boolean().default(false),
     activity_streams: z.boolean().default(true),
     include_raw: z.boolean().default(true)
   },
+  get_sync_completeness: {},
+  get_dataset_status: {},
   get_latest_workout: workoutFilterShape,
   get_latest_workout_summary: workoutFilterShape,
   get_latest_workout_streams: {
@@ -158,6 +161,8 @@ export const inputSchemas = {
   get_data_capabilities: z.object(inputShapes.get_data_capabilities),
   get_latest_activity: z.object(inputShapes.get_latest_activity),
   sync_now: z.object(inputShapes.sync_now),
+  get_sync_completeness: z.object(inputShapes.get_sync_completeness),
+  get_dataset_status: z.object(inputShapes.get_dataset_status),
   get_latest_workout: z.object(inputShapes.get_latest_workout),
   get_latest_workout_summary: z.object(inputShapes.get_latest_workout_summary),
   get_latest_workout_streams: z.object(inputShapes.get_latest_workout_streams),
@@ -229,6 +234,13 @@ function dateBounds(rows: JsonObject[]): { start: string | null; end: string | n
   return { start: dates[0] ?? null, end: dates[dates.length - 1] ?? null };
 }
 
+function datasetRecordStatus(rows: JsonObject[]): JsonObject {
+  return {
+    latest_date: dateBounds(rows).end,
+    record_count: rows.length
+  };
+}
+
 function dateCoverage(startDate: string, endDate: string, rows: JsonObject[]): JsonObject {
   const daysRequested = inclusiveDays(startDate, endDate);
   const dates = new Set(rows.map(rowDate).filter((date): date is string => date !== null));
@@ -252,6 +264,29 @@ function rangeMetadata(range: ReturnType<typeof requestedRange>, rows: JsonObjec
 
 function uniqueStrings(values: unknown[]): string[] {
   return [...new Set(values.map((value) => String(value ?? "")).filter(Boolean))].sort();
+}
+
+function recoveryReadiness(sleep: JsonObject | null, hrv: JsonObject | null, stress: JsonObject | null, bodyBattery: JsonObject | null): JsonObject {
+  const missing: string[] = [];
+  if (!firstNumber(sleep, ["sleep_score", "score"])) missing.push("sleep_score");
+  if (!firstNumber(sleep, ["total_sleep_seconds"])) missing.push("sleep_duration");
+  if (!firstNumber(sleep, ["deep_sleep_seconds"])) missing.push("deep_sleep");
+  if (!firstNumber(sleep, ["light_sleep_seconds"])) missing.push("light_sleep");
+  if (!firstNumber(sleep, ["rem_sleep_seconds"])) missing.push("rem_sleep");
+  if (!firstNumber(sleep, ["avg_sleep_stress"])) missing.push("overnight_stress");
+  if (!firstNumber(sleep, ["avg_spo2"])) missing.push("overnight_spo2");
+  if (!firstNumber(sleep, ["avg_respiration"])) missing.push("overnight_respiration");
+  if (!firstNumber(sleep, ["body_battery_change", "body_battery_recharge"])) missing.push("body_battery_change");
+  if (!firstNumber(hrv, ["avg_overnight_hrv", "last_night_avg", "overnight_avg"])) missing.push("overnight_hrv");
+  if (!hrv?.hrv_status && !hrv?.status) missing.push("hrv_status");
+  if (!firstNumber(hrv, ["baseline_balanced_low", "baseline_balanced_upper", "baseline_low_upper"])) missing.push("hrv_baseline");
+  if (!firstNumber(hrv, ["weekly_avg", "seven_day_avg"])) missing.push("weekly_hrv");
+  if (!stress) missing.push("daily_stress");
+  if (!bodyBattery) missing.push("body_battery");
+  return {
+    full_recovery_data_available: missing.length === 0,
+    missing
+  };
 }
 
 // Latest readers may not have every collection during first setup, so latest tools degrade with warnings.
@@ -663,6 +698,45 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     };
   }
 
+  async function datasetStatus(): Promise<JsonObject> {
+    const entries = await Promise.all(
+      [...healthDatasets, "activities"].map(async (dataset) => {
+        const rows = await reader.readCollection(dataset).catch(() => [] as JsonObject[]);
+        return [dataset, datasetRecordStatus(rows)] as const;
+      })
+    );
+    return Object.fromEntries(entries);
+  }
+
+  async function syncCompleteness(): Promise<JsonObject> {
+    const status = await readSyncStatus();
+    const datasets = await datasetStatus();
+    const latestDates = Object.fromEntries(Object.entries(datasets).map(([name, value]) => [name, (value as JsonObject).latest_date ?? null]));
+    const dailyDate = latestDates.daily;
+    const warnings: string[] = Array.isArray(status.stale_dataset_warnings) ? status.stale_dataset_warnings.map(String) : [];
+    for (const dataset of ["sleep", "hrv"]) {
+      const value = latestDates[dataset];
+      if (typeof dailyDate === "string" && typeof value === "string" && inclusiveDays(value, dailyDate) - 1 > 1) {
+        warnings.push(`${dataset} dataset stale`);
+      }
+      if (typeof dailyDate === "string" && !value) {
+        warnings.push(`${dataset} dataset missing`);
+      }
+    }
+    const completeness = (status.sync_completeness && typeof status.sync_completeness === "object" ? status.sync_completeness : {}) as JsonObject;
+    const derivedCompleteness = Object.fromEntries(Object.entries(datasets).map(([name, value]) => [name, Boolean((value as JsonObject).latest_date)]));
+    return {
+      source: "latest",
+      sync_status: status.status ?? "unknown",
+      sync_completeness: { ...derivedCompleteness, ...completeness },
+      latest_available_dates: latestDates,
+      stale_dataset_warnings: uniqueStrings(warnings),
+      sync_health_score: status.sync_health_score ?? null,
+      activity_stream_coverage: status.activity_stream_coverage ?? null,
+      dataset_status: datasets
+    };
+  }
+
   async function archiveActivities(input: z.infer<typeof inputSchemas.get_activities_by_date_range>) {
     const { startDate, endDate } = requestedRange(input);
     const result = await reader.readArchiveCollection("activities", startDate, endDate);
@@ -830,6 +904,14 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
     async sync_now(input: z.infer<typeof inputSchemas.sync_now>) {
       return ok(await syncNow(input, options));
+    },
+
+    async get_sync_completeness() {
+      return ok(await syncCompleteness());
+    },
+
+    async get_dataset_status() {
+      return ok({ source: "latest", ...(await datasetStatus()) });
     },
 
     async get_latest_workout(input: z.infer<typeof inputSchemas.get_latest_workout>) {
@@ -1047,6 +1129,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       const daily = dailyResult.row;
       const stress = stressResult.row;
       const bodyBattery = bodyBatteryResult.row;
+      const readiness = recoveryReadiness(sleepResult.row, hrvResult.row, stress, bodyBattery);
       return ok({
         date: input.date,
         sources_used: uniqueStrings([sleepResult.source, hrvResult.source, dailyResult.source, stressResult.source, bodyBatteryResult.source]),
@@ -1065,7 +1148,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         recovery_hours: daily?.recovery_hours ?? null,
         acute_load: daily?.acute_load ?? null,
         stress: stress ?? null,
-        avg_stress: stress?.avg_stress ?? stress?.stress_avg ?? stress?.stress ?? null
+        avg_stress: stress?.avg_stress ?? stress?.stress_avg ?? stress?.stress ?? null,
+        ...readiness
       });
     },
 

@@ -197,6 +197,17 @@ describe("tool handlers", () => {
     assert.equal((stats.activities_by_sport as Record<string, number>).cycling, 3);
   });
 
+  it("returns dataset status and sync completeness diagnostics", async () => {
+    const result = await handlers.get_dataset_status();
+    assert.equal((result.structuredContent.daily as Record<string, unknown>).latest_date, "2026-06-13");
+    assert.equal((result.structuredContent.sleep as Record<string, unknown>).record_count, 2);
+
+    const completeness = await handlers.get_sync_completeness();
+    assert.equal(completeness.structuredContent.sync_status, "success");
+    assert.equal((completeness.structuredContent.latest_available_dates as Record<string, unknown>).daily, "2026-06-13");
+    assert.ok(completeness.structuredContent.sync_completeness);
+  });
+
   it("returns latest activity using sync status", async () => {
     const result = await handlers.get_latest_activity();
     assert.equal(result.structuredContent.activity_id, "sample-walk-1");
@@ -292,13 +303,16 @@ describe("tool handlers", () => {
       return child as never;
     };
     const syncHandlers = createToolHandlers(new LocalDataReader(sampleDir), { dataDir: root, spawnProcess: fakeSpawn as never });
-    const started = await syncHandlers.sync_now({ days: 7, force_login: false, activity_streams: true, include_raw: true });
+    const started = await syncHandlers.sync_now({ days: 7, force_login: false, force_refresh: true, activity_streams: true, include_raw: true });
     assert.equal(started.structuredContent.status, "started");
+    assert.equal(started.structuredContent.force_refresh, true);
     assert.equal(spawned.command, "python");
     assert.ok(spawned.args?.includes("--activity-streams"));
+    assert.ok(spawned.args?.includes("--activity-details"));
+    assert.ok(spawned.args?.includes("--force-refresh"));
 
     const lock = JSON.parse(await readFile(path.join(root, "sync.lock"), "utf8")) as { job_id: string };
-    const again = await syncHandlers.sync_now({ days: 7, force_login: false, activity_streams: true, include_raw: true });
+    const again = await syncHandlers.sync_now({ days: 7, force_login: false, force_refresh: false, activity_streams: true, include_raw: true });
     assert.equal(again.structuredContent.status, "already_running");
     assert.equal(again.structuredContent.job_id, lock.job_id);
 
@@ -448,6 +462,21 @@ describe("tool handlers", () => {
     assert.equal(result.structuredContent.resting_hr, 52);
     assert.equal(result.structuredContent.avg_stress, 31);
     assert.equal((result.structuredContent.body_battery as Record<string, unknown>).body_battery_high, 78);
+    assert.equal(result.structuredContent.full_recovery_data_available, true);
+    assert.deepEqual(result.structuredContent.missing, []);
+  });
+
+  it("reports missing recovery readiness fields", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_recovery_for_date({
+      date: "2026-05-02",
+      source: "archive",
+      include_readings: false
+    });
+    assert.equal(result.structuredContent.full_recovery_data_available, false);
+    assert.ok((result.structuredContent.missing as string[]).includes("sleep_score"));
+    assert.ok((result.structuredContent.missing as string[]).includes("overnight_hrv"));
   });
 
   it("summarizes and compares archive training periods", async () => {

@@ -42,6 +42,7 @@ def run_sync(
     activity_details: bool = True,
     activity_streams: bool = True,
     force_login: bool = False,
+    force_refresh: bool = False,
     session_file: Path = DEFAULT_SESSION_FILE,
 ) -> None:
     started_at = datetime.now(timezone.utc)
@@ -107,6 +108,7 @@ def run_sync(
             activity_details=activity_details,
             activity_streams=activity_streams,
             raw_payloads=raw_payloads,
+            force_refresh=force_refresh,
         )
         save_session(client, session_file)
 
@@ -122,6 +124,14 @@ def run_sync(
                         started_at=started_at,
                         completed_at=datetime.now(timezone.utc),
                         activities=activities,
+                        daily=daily,
+                        sleep=sleep,
+                        hrv=hrv,
+                        stress=stress,
+                        body_battery=body_battery,
+                        output=output,
+                        activity_streams_enabled=activity_streams,
+                        force_refresh=force_refresh,
                     ),
                 )
                 raise
@@ -133,6 +143,14 @@ def run_sync(
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
                 activities=[],
+                daily=[],
+                sleep=[],
+                hrv=[],
+                stress=[],
+                body_battery=[],
+                output=output,
+                activity_streams_enabled=activity_streams,
+                force_refresh=force_refresh,
             ),
         )
         raise
@@ -153,6 +171,7 @@ def _write_outputs(
     activity_details: bool,
     activity_streams: bool,
     raw_payloads: dict[str, list[Any]] | None = None,
+    force_refresh: bool = False,
 ) -> None:
     # Top-level files are what latest MCP tools read for fast recent summaries.
     write_json(output / "daily.json", daily)
@@ -210,6 +229,14 @@ def _write_outputs(
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
             activities=activities,
+            daily=daily,
+            sleep=sleep,
+            hrv=hrv,
+            stress=stress,
+            body_battery=body_battery,
+            output=output,
+            activity_streams_enabled=activity_streams,
+            force_refresh=force_refresh,
         ),
     )
     write_json(output / "manifest.json", _manifest(days_to_fetch))
@@ -239,15 +266,123 @@ def _sync_status(
     started_at: datetime,
     completed_at: datetime,
     activities: list[dict[str, Any]],
+    daily: list[dict[str, Any]] | None = None,
+    sleep: list[dict[str, Any]] | None = None,
+    hrv: list[dict[str, Any]] | None = None,
+    stress: list[dict[str, Any]] | None = None,
+    body_battery: list[dict[str, Any]] | None = None,
+    output: Path | None = None,
+    activity_streams_enabled: bool = True,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     latest_activity = activities[0] if activities else {}
+    completeness = sync_completeness(
+        daily=daily or [],
+        sleep=sleep or [],
+        hrv=hrv or [],
+        stress=stress or [],
+        body_battery=body_battery or [],
+        activities=activities,
+        output=output,
+        activity_streams_enabled=activity_streams_enabled,
+    )
     return {
         "status": status,
+        "sync_status": status,
         "started_at": started_at.isoformat(),
         "completed_at": completed_at.isoformat(),
         "activities_synced": len(activities),
         "latest_activity_id": latest_activity.get("id"),
         "latest_activity_date": latest_activity.get("date"),
+        "force_refresh": force_refresh,
+        **completeness,
+    }
+
+
+def sync_completeness(
+    *,
+    daily: list[dict[str, Any]],
+    sleep: list[dict[str, Any]],
+    hrv: list[dict[str, Any]],
+    stress: list[dict[str, Any]],
+    body_battery: list[dict[str, Any]],
+    activities: list[dict[str, Any]],
+    output: Path | None,
+    activity_streams_enabled: bool,
+) -> dict[str, Any]:
+    datasets = {
+        "daily": daily,
+        "sleep": sleep,
+        "hrv": hrv,
+        "stress": stress,
+        "body_battery": body_battery,
+        "activities": activities,
+    }
+    latest_dates = {name: latest_date(rows) for name, rows in datasets.items()}
+    sync_flags = {
+        "daily": bool(daily and latest_dates["daily"]),
+        "sleep": bool(sleep and latest_dates["sleep"]),
+        "hrv": bool(hrv and latest_dates["hrv"]),
+        "stress": bool(stress and latest_dates["stress"]),
+        "body_battery": bool(body_battery and latest_dates["body_battery"]),
+        "activities": bool(activities),
+    }
+    warnings = stale_dataset_warnings(latest_dates)
+    stream_coverage = activity_stream_coverage(activities, output) if output else {"activities_checked": len(activities), "activities_with_streams": 0, "completeness_percent": 0}
+    if activity_streams_enabled and activities and stream_coverage["activities_with_streams"] == 0:
+        warnings.append("activity streams missing")
+    score_items = list(sync_flags.values()) + [stream_coverage["activities_with_streams"] > 0 if activities else True]
+    return {
+        "sync_completeness": sync_flags,
+        "latest_available_dates": latest_dates,
+        "stale_dataset_warnings": warnings,
+        "sync_health_score": round(sum(1 for item in score_items if item) / len(score_items) * 100),
+        "activity_stream_coverage": stream_coverage,
+    }
+
+
+def latest_date(rows: list[dict[str, Any]]) -> str | None:
+    dates = sorted(str(row.get("date", ""))[:10] for row in rows if row.get("date"))
+    return dates[-1] if dates else None
+
+
+def stale_dataset_warnings(latest_dates: dict[str, str | None]) -> list[str]:
+    warnings: list[str] = []
+    daily_date = latest_dates.get("daily")
+    if not daily_date:
+        return warnings
+    for dataset in ("sleep", "hrv"):
+        dataset_date = latest_dates.get(dataset)
+        if dataset_date and date_lag_days(daily_date, dataset_date) > 1:
+            warnings.append(f"{dataset} dataset stale")
+        elif not dataset_date:
+            warnings.append(f"{dataset} dataset missing")
+    return warnings
+
+
+def date_lag_days(newer: str, older: str) -> int:
+    try:
+        return (date.fromisoformat(newer) - date.fromisoformat(older)).days
+    except ValueError:
+        return 0
+
+
+def activity_stream_coverage(activities: list[dict[str, Any]], output: Path | None) -> dict[str, Any]:
+    if output is None:
+        return {"activities_checked": len(activities), "activities_with_streams": 0, "completeness_percent": 0}
+    checked = 0
+    found = 0
+    for activity in activities[:30]:
+        activity_id = activity.get("id")
+        if not activity_id:
+            continue
+        checked += 1
+        if (output / "activity_streams" / f"{activity_id}.json").exists():
+            found += 1
+    return {
+        "activities_checked": checked,
+        "activities_with_streams": found,
+        "completeness_percent": round((found / checked) * 100, 2) if checked else 100,
     }
 
 
@@ -299,6 +434,7 @@ def main() -> None:
     parser.add_argument("--activity-streams", type=bool_arg, default=True)
     parser.add_argument("--session-file", type=Path, default=Path(os.environ.get("GARMIN_SESSION_FILE", str(DEFAULT_SESSION_FILE))))
     parser.add_argument("--force-login", action="store_true")
+    parser.add_argument("--force-refresh", action="store_true")
     args = parser.parse_args()
     run_sync(
         days=args.days,
@@ -311,6 +447,7 @@ def main() -> None:
         activity_details=args.activity_details,
         activity_streams=args.activity_streams,
         force_login=args.force_login,
+        force_refresh=args.force_refresh,
         session_file=args.session_file,
     )
 

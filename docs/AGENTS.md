@@ -7,6 +7,8 @@ This file is written for coding agents and MCP clients that need to understand t
 Use latest tools for current data:
 
 - `get_data_capabilities`
+- `get_sync_completeness`
+- `get_dataset_status`
 - `get_today_summary`
 - `get_range_summary`
 - `get_recent_activities`
@@ -41,6 +43,10 @@ Every tool response includes `source` or `sources_used`. Do not infer whether da
 Archive/range tools include `coverage` with `days_requested`, `days_found`, and `completeness_percent`. If a date was defaulted, read `defaults_applied` instead of assuming the user asked for a range.
 
 Activity stream and workout analysis tools include `streams_available`, `stream_sample_count`, `full_data_available`, `available_streams`, and `missing_streams`. Use those fields when deciding how complete an activity analysis can be.
+
+Before recovery advice, call `get_sync_completeness` or `get_recovery_for_date`. A sync is complete for recovery only when daily, sleep, HRV, stress, body battery, activities, details, and streams are refreshed and `get_recovery_for_date.full_recovery_data_available` is true. If false, use the `missing` list; do not send the user to Strava, Apple Health, or Garmin Connect as a fallback.
+
+Use `sync_now` with `force_refresh: true` when sleep score, HRV, or recovery data appears stale after a normal sync.
 
 Use stream tools for detailed workout analysis:
 

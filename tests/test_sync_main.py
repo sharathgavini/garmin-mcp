@@ -90,8 +90,17 @@ def test_run_sync_writes_normalized_json(monkeypatch, tmp_path):
 
     status = json.loads((tmp_path / "latest_sync_status.json").read_text())
     assert status["status"] == "success"
+    assert status["sync_status"] == "success"
     assert status["activities_synced"] == 1
     assert status["latest_activity_id"] == "123"
+    assert status["sync_completeness"]["daily"] is True
+    assert status["sync_completeness"]["sleep"] is True
+    assert status["sync_completeness"]["hrv"] is True
+    assert status["sync_completeness"]["stress"] is True
+    assert status["sync_completeness"]["body_battery"] is True
+    assert status["sync_completeness"]["activities"] is True
+    assert status["latest_available_dates"]["sleep"] == "2999-01-01"
+    assert status["activity_stream_coverage"]["activities_with_streams"] == 1
 
     detail = json.loads((tmp_path / "activity_details" / "123.json").read_text())
     assert detail["streams_stored_separately"] is True
@@ -138,3 +147,33 @@ def test_run_sync_upload_failure_marks_status_failed(monkeypatch, tmp_path):
 
     status = json.loads((tmp_path / "latest_sync_status.json").read_text())
     assert status["status"] == "failed"
+
+
+def test_stale_dataset_warnings_detect_sleep_and_hrv_lag():
+    warnings = sync_main.stale_dataset_warnings(
+        {
+            "daily": "2026-06-15",
+            "sleep": "2026-06-13",
+            "hrv": "2026-06-12",
+        }
+    )
+
+    assert "sleep dataset stale" in warnings
+    assert "hrv dataset stale" in warnings
+
+
+def test_sync_completeness_reports_missing_recovery_dataset(tmp_path):
+    completeness = sync_main.sync_completeness(
+        daily=[{"date": "2026-06-15"}],
+        sleep=[],
+        hrv=[{"date": "2026-06-15"}],
+        stress=[{"date": "2026-06-15"}],
+        body_battery=[{"date": "2026-06-15"}],
+        activities=[],
+        output=tmp_path,
+        activity_streams_enabled=True,
+    )
+
+    assert completeness["sync_completeness"]["sleep"] is False
+    assert completeness["latest_available_dates"]["daily"] == "2026-06-15"
+    assert "sleep dataset missing" in completeness["stale_dataset_warnings"]

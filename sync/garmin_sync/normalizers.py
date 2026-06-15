@@ -63,6 +63,9 @@ def normalize_daily(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
 
 def normalize_sleep(raw: dict[str, Any], day: date | str, raw_payload_path: str | None = None) -> dict[str, Any]:
     daily_sleep = raw.get("dailySleepDTO") if isinstance(raw.get("dailySleepDTO"), dict) else {}
+    sleep_score_payload = pick_any([raw, daily_sleep], "sleepScore")
+    if not isinstance(sleep_score_payload, dict):
+        sleep_score_payload = {}
     naps = pick_any([raw, daily_sleep], "dailyNapDTOS", "naps") or []
     sleep_need = pick_any([raw, daily_sleep], "sleepNeed")
     sleep_alignment = pick_any([raw, daily_sleep], "sleepAlignment")
@@ -78,9 +81,24 @@ def normalize_sleep(raw: dict[str, Any], day: date | str, raw_payload_path: str 
         "light_sleep_seconds": pick_any([raw, daily_sleep], "lightSleepSeconds", "lightSeconds"),
         "rem_sleep_seconds": pick_any([raw, daily_sleep], "remSleepSeconds", "remSeconds"),
         "awake_sleep_seconds": pick_any([raw, daily_sleep], "awakeSleepSeconds", "awakeSeconds"),
-        "sleep_score": pick_any([raw, daily_sleep], "overallScore", "sleepScore", "score")
-        or pick_path(raw, ("sleepScores", "overall", "value"), ("sleepScores", "overallScore", "value")),
-        "sleep_score_qualifier": pick_any([raw, daily_sleep], "sleepScoreQualifier", "scoreQualifier", "overallScoreQualifier"),
+        "sleep_score": pick_any([raw, daily_sleep], "overallScore", "score")
+        or pick_any([sleep_score_payload], "overallScore", "score", "value")
+        or pick_path(
+            raw,
+            ("sleepScores", "overall", "value"),
+            ("sleepScores", "overallScore", "value"),
+            ("sleepScore", "overallScore", "value"),
+            ("sleepScore", "score", "value"),
+        )
+        or pick_path(
+            daily_sleep,
+            ("sleepScores", "overall", "value"),
+            ("sleepScores", "overallScore", "value"),
+            ("sleepScore", "overallScore", "value"),
+            ("sleepScore", "score", "value"),
+        ),
+        "sleep_score_qualifier": pick_any([raw, daily_sleep, sleep_score_payload], "sleepScoreQualifier", "scoreQualifier", "overallScoreQualifier", "qualifier"),
+        "sleep_quality": pick_any([raw, daily_sleep, sleep_score_payload], "sleepQuality", "sleepQualityTypePK", "qualifier"),
         "avg_sleep_stress": pick_any([raw, daily_sleep], "avgSleepStress", "averageSleepStress"),
         "avg_heart_rate": pick_any([raw, daily_sleep], "avgHeartRate", "averageHeartRate"),
         "lowest_spo2": pick_any([raw, daily_sleep], "lowestSpO2Value", "lowestSpO2", "lowestSpo2", "minSpO2"),
@@ -89,6 +107,7 @@ def normalize_sleep(raw: dict[str, Any], day: date | str, raw_payload_path: str 
         "lowest_respiration": pick_any([raw, daily_sleep], "lowestRespirationValue", "minRespiration"),
         "highest_respiration": pick_any([raw, daily_sleep], "highestRespirationValue", "maxRespiration"),
         "body_battery_change": pick_any([raw, daily_sleep], "bodyBatteryChange"),
+        "body_battery_recharge": pick_any([raw, daily_sleep], "bodyBatteryRecharge", "bodyBatteryChange"),
         "nap_time_seconds": pick_any([raw, daily_sleep], "napTimeSeconds", "dailyNapSeconds"),
         "naps": naps,
         "sleep_need": sleep_need,
