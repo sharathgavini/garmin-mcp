@@ -88,13 +88,15 @@ The important design rule is that MCP does not call Garmin for ordinary reads. I
 flowchart TD
   Question["User asks a Garmin question"]
   Capabilities["get_data_capabilities"]
+  Status["get_system_status"]
   SingleDay{"Single-date recovery/sleep/HRV?"}
   Latest{"Recent/latest question?"}
   Streams{"Needs detailed workout streams?"}
   Archive{"Long historical range?"}
 
   Question --> Capabilities
-  Capabilities --> SingleDay
+  Capabilities --> Status
+  Status --> SingleDay
   SingleDay -->|"yes"| RecoveryTools["get_sleep_for_date\nget_hrv_for_date\nget_recovery_for_date"]
   SingleDay -->|"no"| Latest
   Latest -->|"yes"| LatestTools["get_today_summary\nget_range_summary\nget_latest_workout"]
@@ -108,7 +110,7 @@ flowchart TD
   RecoveryTools --> Answer
 ```
 
-Agents should start with `get_data_capabilities` for broad questions. They should use `source`, `sources_used`, `coverage`, `defaults_applied`, and stream completeness fields instead of guessing what data exists.
+Agents should start with `get_data_capabilities` for broad questions, then call `get_system_status` when recovery readiness, archive freshness, or stream completeness matters. They should use `source`, `sources_used`, `coverage`, `defaults_applied`, and stream completeness fields instead of guessing what data exists.
 
 ## `sync_now` Flow
 

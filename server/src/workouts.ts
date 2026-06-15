@@ -147,6 +147,7 @@ export function streamCompleteness(stream: JsonObject | null): JsonObject {
     streams_available: stream !== null,
     stream_sample_count: sampleCount,
     full_data_available: stream !== null && missing.length === 0,
+    partial_stream: stream !== null && missing.length > 0,
     available_streams: fields,
     missing_streams: missing
   };

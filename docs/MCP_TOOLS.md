@@ -19,6 +19,31 @@ Returns:
 - Total activity count and total days available
 - Archive statistics for activity, stream, sleep, and HRV coverage
 
+Important response fields:
+
+- `history`: archive and latest date bounds plus total days available
+- `health_datasets`: per-dataset availability, record counts, date bounds, and coverage
+- `activity_datasets`: activity/detail/stream availability and sampled counts
+- `stream_fields_observed`: stream fields actually present in stored Garmin data
+- `missing_or_optional_stream_fields`: supported stream fields not observed in the sampled data
+- `sport_categories_observed`: normalized sport categories seen in activities
+- `archive_stats`: activity counts, sport counts, stream coverage, detail coverage, sleep coverage, and HRV coverage
+- `last_sync`: latest sync status file or running lock status
+
+### `get_system_status`
+
+Call this when an MCP client needs to know whether the system is healthy enough to trust for recovery or historical analysis.
+
+Returns:
+
+- Server status
+- Latest sync status
+- Archive backfill checkpoint status when available
+- History coverage
+- Available health/activity datasets
+- Auth mode summary with secrets redacted
+- Warnings for stale latest data, date-only sleep/HRV normalization, missing streams, or running backfill
+
 ### `get_today_summary`
 
 Returns the daily Garmin summary for one date from latest data.
@@ -32,6 +57,19 @@ Inputs:
 Returns compact recent sleep, HRV, stress, body battery, activity, and recovery trends from latest data.
 
 Use archive tools for long historical ranges.
+
+All range responses include:
+
+- `requested_start_date`
+- `requested_end_date`
+- `defaults_applied` when `end_date` was omitted or `null`
+- `coverage.days_requested`
+- `coverage.days_found`
+- `coverage.completeness_percent`
+- `coverage.missing_dates`
+- `coverage.available_start_date`
+- `coverage.available_end_date`
+- `source` or `sources_used`
 
 Inputs:
 
@@ -253,7 +291,7 @@ Inputs:
 
 ## ChatGPT Examples
 
-- First call `get_data_capabilities`, then analyze my latest ride using Garmin data only.
+- First call `get_data_capabilities` and `get_system_status`, then analyze my latest ride using Garmin data only.
 - Use Garmin MCP to compare my cycling volume from 2026-05-01 to 2026-05-31 against 2026-06-01 to 2026-06-15.
 - Use Garmin MCP to check whether full streams are available before analyzing cadence, heart rate, speed, or power.
 
@@ -264,6 +302,15 @@ List tools, then call:
 ```json
 {
   "name": "get_data_capabilities",
+  "arguments": {}
+}
+```
+
+System status query:
+
+```json
+{
+  "name": "get_system_status",
   "arguments": {}
 }
 ```
@@ -303,6 +350,7 @@ Stream tools include:
 - `streams_available`
 - `stream_sample_count`
 - `full_data_available`
+- `partial_stream`
 - `available_streams`
 - `missing_streams`
 

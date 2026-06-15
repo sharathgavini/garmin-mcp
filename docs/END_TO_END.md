@@ -307,6 +307,7 @@ Use Garmin MCP, sync now with force refresh, then tell me whether recovery data 
 Expected behavior:
 
 - ChatGPT should call `get_data_capabilities`.
+- ChatGPT should call `get_system_status` when freshness, backfill state, or stream completeness matters.
 - For recovery, ChatGPT should call `get_recovery_for_date`.
 - If data is incomplete, the response should include `missing`.
 - If `full_recovery_data_available` is true, Garmin MCP is the system of record.
@@ -393,4 +394,6 @@ docker exec garmin-mcp python -m sync.renormalize \
 - `OAUTH_ADMIN_PASSWORD` is strong.
 - Cloudflare Tunnel points to `http://garmin-mcp:3000`.
 - `/mcp` requires bearer or OAuth.
+- `get_data_capabilities` reports the history range, supported datasets, sports, streams, and archive statistics.
+- `get_system_status` has no unresolved warnings for stale latest data, date-only sleep/HRV, or missing stream data before deep analysis.
 - `get_sync_completeness` reports current sleep/HRV data before recovery advice.

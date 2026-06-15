@@ -234,13 +234,47 @@ describe("tool handlers", () => {
     assert.deepEqual(result.structuredContent.sources_used, ["archive"]);
     assert.equal(result.structuredContent.history_start, "2026-04-20");
     assert.equal(result.structuredContent.history_end, "2026-06-14");
+    assert.deepEqual(result.structuredContent.history, {
+      archive_start_date: "2026-04-20",
+      archive_end_date: "2026-06-14",
+      latest_start_date: null,
+      latest_end_date: null,
+      total_days_available: 56
+    });
     assert.equal(result.structuredContent.sleep, true);
     assert.equal(result.structuredContent.hrv, true);
     assert.equal(result.structuredContent.activity_streams, true);
     assert.ok((result.structuredContent.stream_fields as string[]).includes("heart_rate"));
+    assert.ok((result.structuredContent.stream_fields_observed as string[]).includes("heart_rate"));
+    assert.ok((result.structuredContent.missing_or_optional_stream_fields as string[]).includes("power_watts"));
+    assert.ok((result.structuredContent.sport_categories_observed as string[]).includes("cycling"));
+    assert.equal(((result.structuredContent.health_datasets as Record<string, Record<string, unknown>>).sleep).available, true);
+    assert.equal(((result.structuredContent.activity_datasets as Record<string, unknown>).activity_streams), true);
+    assert.ok(result.structuredContent.last_sync);
     const stats = result.structuredContent.archive_statistics as Record<string, unknown>;
     assert.equal(stats.total_activities, 5);
     assert.equal((stats.activities_by_sport as Record<string, number>).cycling, 3);
+    assert.equal((result.structuredContent.archive_stats as Record<string, unknown>).total_activities, 5);
+  });
+
+  it("returns system status with dataset and warning metadata", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "garmin-status-"));
+    const latest = path.join(root, "latest");
+    await mkdir(latest, { recursive: true });
+    await writeFile(path.join(latest, "manifest.json"), JSON.stringify({ date_range: { start: "2026-06-01", end: "2026-06-01" } }));
+    await writeFile(path.join(latest, "daily.json"), JSON.stringify([{ date: "2026-06-01" }]));
+    await writeFile(path.join(latest, "sleep.json"), JSON.stringify([{ date: "2026-06-01" }]));
+    await writeFile(path.join(latest, "hrv.json"), JSON.stringify([{ date: "2026-06-01" }]));
+    await writeFile(path.join(latest, "stress.json"), JSON.stringify([]));
+    await writeFile(path.join(latest, "body_battery.json"), JSON.stringify([]));
+    await writeFile(path.join(latest, "activities.json"), JSON.stringify([{ id: "a1", date: "2026-06-01", type: "running" }]));
+    const statusHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await statusHandlers.get_system_status();
+    assert.equal(result.structuredContent.server_status, "ok");
+    assert.equal((result.structuredContent.auth_mode_summary as Record<string, unknown>).secrets_redacted, true);
+    assert.ok((result.structuredContent.available_datasets as Record<string, unknown>).health);
+    assert.ok((result.structuredContent.warnings as string[]).some((warning) => warning.includes("sleep normalization")));
+    assert.ok((result.structuredContent.warnings as string[]).some((warning) => warning.includes("activity streams")));
   });
 
   it("returns dataset status and sync completeness diagnostics", async () => {
@@ -285,6 +319,7 @@ describe("tool handlers", () => {
     assert.equal(full.structuredContent.streams_available, true);
     assert.equal(full.structuredContent.stream_sample_count, 6);
     assert.equal(full.structuredContent.full_data_available, false);
+    assert.equal(full.structuredContent.partial_stream, true);
     assert.ok((full.structuredContent.available_streams as string[]).includes("heart_rate"));
     assert.ok((full.structuredContent.missing_streams as string[]).includes("position_lat"));
 
@@ -454,11 +489,12 @@ describe("tool handlers", () => {
     });
     assert.equal(result.structuredContent.total_matches, 3);
     assert.equal(result.structuredContent.source, "archive");
-    assert.deepEqual(result.structuredContent.coverage, {
-      days_requested: 91,
-      days_found: 3,
-      completeness_percent: 3.3
-    });
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).days_requested, 91);
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).days_found, 3);
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).completeness_percent, 3.3);
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).available_start_date, "2026-04-20");
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).available_end_date, "2026-06-14");
+    assert.ok(((result.structuredContent.coverage as Record<string, unknown>).missing_dates as string[]).includes("2026-04-01"));
     const activities = result.structuredContent.activities as Array<Record<string, unknown>>;
     assert.deepEqual(activities.map((activity) => activity.id), ["ride-jun", "ride-may", "ride-apr"]);
     assert.equal(activities.find((activity) => activity.id === "ride-may")?.has_streams, true);
@@ -490,11 +526,10 @@ describe("tool handlers", () => {
     assert.equal(result.structuredContent.requested_start_date, "2026-05-01");
     assert.equal(result.structuredContent.requested_end_date, "2026-05-01");
     assert.deepEqual(result.structuredContent.defaults_applied, { end_date: "start_date" });
-    assert.deepEqual(result.structuredContent.coverage, {
-      days_requested: 1,
-      days_found: 1,
-      completeness_percent: 100
-    });
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).days_requested, 1);
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).days_found, 1);
+    assert.equal((result.structuredContent.coverage as Record<string, unknown>).completeness_percent, 100);
+    assert.deepEqual((result.structuredContent.coverage as Record<string, unknown>).missing_dates, []);
     const metrics = result.structuredContent.metrics as Record<string, { records: Array<Record<string, unknown>> }>;
     assert.equal(metrics.sleep.records[0].total_sleep_seconds, 27000);
     assert.equal(metrics.hrv.records[0].last_night_avg, 48);

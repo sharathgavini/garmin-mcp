@@ -48,6 +48,11 @@ The local server exposes:
 - `GET /healthz`
 - `POST /mcp` with `Authorization: Bearer dev-token`
 
+For AI clients, the recommended first calls are:
+
+- `get_data_capabilities` to discover available date ranges, datasets, sports, streams, and archive statistics.
+- `get_system_status` to check sync health, archive backfill status, stale-data warnings, and whether sleep/HRV normalization or activity streams need attention.
+
 ## Common Commands
 
 Run Python tests:

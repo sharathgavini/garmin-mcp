@@ -58,6 +58,7 @@ export const inputShapes = {
   },
   get_sync_status: {},
   get_data_capabilities: {},
+  get_system_status: {},
   get_latest_activity: {},
   sync_now: {
     days: z.number().int().min(1).max(30).default(7),
@@ -161,6 +162,7 @@ export const inputSchemas = {
   get_coach_context: z.object(inputShapes.get_coach_context),
   get_sync_status: z.object(inputShapes.get_sync_status),
   get_data_capabilities: z.object(inputShapes.get_data_capabilities),
+  get_system_status: z.object(inputShapes.get_system_status),
   get_latest_activity: z.object(inputShapes.get_latest_activity),
   sync_now: z.object(inputShapes.sync_now),
   get_sync_completeness: z.object(inputShapes.get_sync_completeness),
@@ -238,6 +240,20 @@ function dateBounds(rows: JsonObject[]): { start: string | null; end: string | n
   return { start: dates[0] ?? null, end: dates[dates.length - 1] ?? null };
 }
 
+function eachDate(startDate: string, endDate: string): string[] {
+  if (!isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate) {
+    return [];
+  }
+  const dates: string[] = [];
+  const current = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 function datasetRecordStatus(rows: JsonObject[]): JsonObject {
   return {
     latest_date: dateBounds(rows).end,
@@ -248,11 +264,17 @@ function datasetRecordStatus(rows: JsonObject[]): JsonObject {
 function dateCoverage(startDate: string, endDate: string, rows: JsonObject[]): JsonObject {
   const daysRequested = inclusiveDays(startDate, endDate);
   const dates = new Set(rows.map(rowDate).filter((date): date is string => date !== null));
+  const sortedDates = [...dates].sort();
+  const missingDates = eachDate(startDate, endDate).filter((date) => !dates.has(date));
   const daysFound = dates.size;
   return {
     days_requested: daysRequested,
     days_found: daysFound,
-    completeness_percent: daysRequested > 0 ? Math.round((daysFound / daysRequested) * 10000) / 100 : 0
+    completeness_percent: daysRequested > 0 ? Math.round((daysFound / daysRequested) * 10000) / 100 : 0,
+    missing_dates: missingDates.slice(0, 100),
+    missing_dates_truncated: Math.max(0, missingDates.length - 100),
+    available_start_date: sortedDates[0] ?? null,
+    available_end_date: sortedDates[sortedDates.length - 1] ?? null
   };
 }
 
@@ -268,6 +290,21 @@ function rangeMetadata(range: ReturnType<typeof requestedRange>, rows: JsonObjec
 
 function uniqueStrings(values: unknown[]): string[] {
   return [...new Set(values.map((value) => String(value ?? "")).filter(Boolean))].sort();
+}
+
+function rowsAreDateOnly(rows: JsonObject[]): boolean {
+  return rows.length > 0 && rows.every((row) => Object.keys(row).every((key) => ["date", "source", "data_available"].includes(key)));
+}
+
+function datasetCoverage(name: string, rows: JsonObject[], historyStart: string | null, historyEnd: string | null): JsonObject {
+  return {
+    dataset: name,
+    available: rows.length > 0,
+    record_count: rows.length,
+    date_bounds: dateBounds(rows),
+    coverage: historyStart && historyEnd ? dateCoverage(historyStart, historyEnd, rows) : null,
+    date_only_normalization: rowsAreDateOnly(rows)
+  };
 }
 
 function recoveryReadiness(sleep: JsonObject | null, hrv: JsonObject | null, stress: JsonObject | null, bodyBattery: JsonObject | null): JsonObject {
@@ -642,14 +679,16 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
   async function capabilities(): Promise<JsonObject> {
     // Capability discovery answers "what data do I have?" before clients choose tools.
-    const [manifest, latestActivities, archiveActivitiesRows, latestSleep, latestHrv, latestBodyBattery, latestStress] = await Promise.all([
+    const [manifest, latestActivities, archiveActivitiesRows, latestDaily, latestSleep, latestHrv, latestBodyBattery, latestStress, syncStatus] = await Promise.all([
       reader.readManifest().catch(() => ({} as Manifest)),
       reader.readCollection("activities").catch(() => [] as JsonObject[]),
       reader.readArchiveActivities ? reader.readArchiveActivities() : Promise.resolve([] as JsonObject[]),
+      reader.readCollection("daily").catch(() => [] as JsonObject[]),
       reader.readCollection("sleep").catch(() => [] as JsonObject[]),
       reader.readCollection("hrv").catch(() => [] as JsonObject[]),
       reader.readCollection("body_battery").catch(() => [] as JsonObject[]),
-      reader.readCollection("stress").catch(() => [] as JsonObject[])
+      reader.readCollection("stress").catch(() => [] as JsonObject[]),
+      readSyncStatus()
     ]);
     const activityMap = new Map<string, JsonObject>();
     for (const activity of [...archiveActivitiesRows, ...latestActivities]) {
@@ -672,21 +711,97 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
           return id ? streamFor(id, "auto") : null;
         })
     );
+    const sampleDetails = await Promise.all(
+      activities
+        .slice(0, 200)
+        .map(async (activity) => {
+          const id = activityId(activity);
+          return id ? reader.readActivityDetail(id).catch(() => null) : null;
+        })
+    );
     const streams = sampleStreams.filter((stream): stream is JsonObject => stream !== null);
+    const details = sampleDetails.filter((detail): detail is JsonObject => detail !== null);
     const streamFields = uniqueStrings(streams.flatMap((stream) => (Array.isArray(stream.fields) ? stream.fields : [])));
+    const supportedStreamFields = ["heart_rate", "cadence", "speed_mps", "power_watts", "altitude_m", "distance_m", "position_lat", "position_long", "temperature"];
+    const missingOrOptionalStreamFields = supportedStreamFields.filter((field) => !streamFields.includes(field));
     const streamCoverage = activities.length ? Math.round((streams.length / Math.min(activities.length, 200)) * 10000) / 100 : 0;
     const activitiesBySport = countsBySport(activities);
+    const latestBounds = dateBounds([...latestDaily, ...latestSleep, ...latestHrv, ...latestStress, ...latestBodyBattery, ...latestActivities]);
+    const healthEntriesMap = healthEntries as Record<string, { rows: JsonObject[] } | null>;
+    const archiveHealthRows = Object.fromEntries(
+      healthDatasets.map((dataset) => [dataset, healthEntriesMap[dataset]?.rows ?? []])
+    ) as Record<string, JsonObject[]>;
+    const healthDatasetStats = Object.fromEntries(
+      healthDatasets.map((dataset) => [
+        dataset,
+        datasetCoverage(
+          dataset,
+          archiveHealthRows[dataset].length
+            ? archiveHealthRows[dataset]
+            : dataset === "daily"
+              ? latestDaily
+              : dataset === "sleep"
+                ? latestSleep
+                : dataset === "hrv"
+                  ? latestHrv
+                  : dataset === "stress"
+                    ? latestStress
+                    : latestBodyBattery,
+          historyStart,
+          historyEnd
+        )
+      ])
+    );
+    const archiveStatistics = {
+      total_activities: activities.length,
+      activities_by_sport: activitiesBySport,
+      date_coverage: historyStart && historyEnd ? dateCoverage(historyStart, historyEnd, activities) : null,
+      stream_coverage: {
+        activities_checked: Math.min(activities.length, 200),
+        activities_with_streams: streams.length,
+        completeness_percent: streamCoverage
+      },
+      activity_detail_coverage: {
+        activities_checked: Math.min(activities.length, 200),
+        activities_with_details: details.length,
+        completeness_percent: activities.length ? Math.round((details.length / Math.min(activities.length, 200)) * 10000) / 100 : 0
+      },
+      sleep_coverage: healthEntriesMap.sleep ? dateCoverage(historyStart ?? "", historyEnd ?? "", healthEntriesMap.sleep.rows) : null,
+      hrv_coverage: healthEntriesMap.hrv ? dateCoverage(historyStart ?? "", historyEnd ?? "", healthEntriesMap.hrv.rows) : null
+    };
     return {
       source: archiveActivitiesRows.length ? "archive" : "latest",
       sources_used: archiveActivitiesRows.length && latestActivities.length ? ["archive", "latest"] : archiveActivitiesRows.length ? ["archive"] : ["latest"],
+      history: {
+        archive_start_date: historyStart,
+        archive_end_date: historyEnd,
+        latest_start_date: latestBounds.start ?? manifest.date_range?.start ?? null,
+        latest_end_date: latestBounds.end ?? manifest.date_range?.end ?? null,
+        total_days_available: historyStart && historyEnd ? inclusiveDays(historyStart, historyEnd) : 0
+      },
+      health_datasets: healthDatasetStats,
+      activity_datasets: {
+        activities: activities.length > 0,
+        activity_details: details.length > 0,
+        activity_streams: streams.length > 0,
+        raw_activity_details: Boolean(manifest.files?.raw_activity_details),
+        total_activity_count: activities.length,
+        activities_checked_for_details: Math.min(activities.length, 200),
+        activities_checked_for_streams: Math.min(activities.length, 200)
+      },
+      stream_fields_observed: streamFields,
+      missing_or_optional_stream_fields: missingOrOptionalStreamFields,
+      sport_categories_observed: Object.keys(activitiesBySport).sort(),
+      archive_stats: archiveStatistics,
+      last_sync: syncStatus,
       history_start: historyStart,
       history_end: historyEnd,
       latest_data_coverage: manifest.date_range ?? null,
       supported_health_datasets: healthDatasets,
-      sleep: Boolean(healthEntries.sleep?.rows.length || latestSleep.length),
-      hrv: Boolean(healthEntries.hrv?.rows.length || latestHrv.length),
-      body_battery: Boolean(healthEntries.body_battery?.rows.length || latestBodyBattery.length),
-      stress: Boolean(healthEntries.stress?.rows.length || latestStress.length),
+      sleep: Boolean(healthEntriesMap.sleep?.rows.length || latestSleep.length),
+      hrv: Boolean(healthEntriesMap.hrv?.rows.length || latestHrv.length),
+      body_battery: Boolean(healthEntriesMap.body_battery?.rows.length || latestBodyBattery.length),
+      stress: Boolean(healthEntriesMap.stress?.rows.length || latestStress.length),
       raw_data_available: Boolean(manifest.files?.raw) || false,
       activity_streams: streams.length > 0,
       stream_fields: streamFields,
@@ -695,18 +810,56 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       sports: Object.keys(activitiesBySport).sort(),
       total_activity_count: activities.length,
       total_days_available: historyStart && historyEnd ? inclusiveDays(historyStart, historyEnd) : 0,
-      archive_statistics: {
-        total_activities: activities.length,
-        activities_by_sport: activitiesBySport,
-        date_coverage: historyStart && historyEnd ? dateCoverage(historyStart, historyEnd, activities) : null,
-        stream_coverage: {
-          activities_checked: Math.min(activities.length, 200),
-          activities_with_streams: streams.length,
-          completeness_percent: streamCoverage
-        },
-        sleep_coverage: healthEntries.sleep ? dateCoverage(historyStart ?? "", historyEnd ?? "", healthEntries.sleep.rows) : null,
-        hrv_coverage: healthEntries.hrv ? dateCoverage(historyStart ?? "", historyEnd ?? "", healthEntries.hrv.rows) : null
-      }
+      archive_statistics: archiveStatistics
+    };
+  }
+
+  async function systemStatus(): Promise<JsonObject> {
+    const [caps, syncStatus, datasets, manifest, latestSleep, latestHrv] = await Promise.all([
+      capabilities(),
+      readSyncStatus(),
+      datasetStatus(),
+      reader.readManifest().catch(() => ({} as Manifest)),
+      reader.readCollection("sleep").catch(() => [] as JsonObject[]),
+      reader.readCollection("hrv").catch(() => [] as JsonObject[])
+    ]);
+    const warnings: string[] = [];
+    const history = caps.history as JsonObject | undefined;
+    const activityDatasets = caps.activity_datasets as JsonObject | undefined;
+    if (rowsAreDateOnly(latestSleep)) {
+      warnings.push("latest sleep normalization appears date-only; run sync.renormalize for sleep.");
+    }
+    if (rowsAreDateOnly(latestHrv)) {
+      warnings.push("latest HRV normalization appears date-only; run sync.renormalize for hrv.");
+    }
+    if (!activityDatasets?.activity_streams && (activityDatasets?.total_activity_count as number | undefined ?? 0) > 0) {
+      warnings.push("activity streams are missing; workout analysis will be summary-only.");
+    }
+    const latestEnd = typeof history?.latest_end_date === "string" ? history.latest_end_date : manifest.date_range?.end;
+    if (latestEnd && inclusiveDays(latestEnd, todayIso()) - 1 > 1) {
+      warnings.push("latest data appears stale by more than one day.");
+    }
+    const archiveBackfillStatus = await reader.readJson<JsonObject>("../archive/backfill_checkpoint.json").catch(() => null);
+    if (archiveBackfillStatus?.status === "running") {
+      warnings.push("archive backfill is currently running.");
+    }
+    return {
+      source: "latest",
+      server_status: "ok",
+      latest_sync: syncStatus,
+      archive_backfill_status: archiveBackfillStatus,
+      history_coverage: history ?? null,
+      available_datasets: {
+        health: caps.health_datasets,
+        activity: caps.activity_datasets
+      },
+      auth_mode_summary: {
+        bearer_token_configured: Boolean(process.env.MCP_BEARER_TOKEN),
+        oauth_routes_enabled: true,
+        secrets_redacted: true
+      },
+      warnings: uniqueStrings(warnings),
+      version: process.env.npm_package_version ?? null
     };
   }
 
@@ -792,6 +945,14 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok({
         requested_start_date: range.requested_start_date,
         requested_end_date: range.requested_end_date,
+        coverage: dateCoverage(startDate, endDate, [
+          ...dailyRange,
+          ...filterByDateRange(sleep, startDate, endDate),
+          ...filterByDateRange(hrv, startDate, endDate),
+          ...filterByDateRange(stress, startDate, endDate),
+          ...filterByDateRange(bodyBattery, startDate, endDate),
+          ...filterByDateRange(activities, startDate, endDate)
+        ]),
         defaults_applied: range.defaults_applied,
         start_date: startDate,
         end_date: endDate,
@@ -881,6 +1042,10 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
     async get_data_capabilities() {
       return ok(await capabilities());
+    },
+
+    async get_system_status() {
+      return ok(await systemStatus());
     },
 
     async get_latest_activity() {

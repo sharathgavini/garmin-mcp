@@ -7,6 +7,7 @@ This file is written for coding agents and MCP clients that need to understand t
 Use latest tools for current data:
 
 - `get_data_capabilities`
+- `get_system_status`
 - `get_sync_completeness`
 - `get_dataset_status`
 - `get_today_summary`
@@ -38,11 +39,13 @@ For date range tools, `end_date` is optional and defaults to `start_date`. Some 
 
 Call `get_data_capabilities` before broad analysis. It tells you the available history range, latest coverage, supported health datasets, supported activity types, stream fields, raw data availability, activity stream availability, total activity count, total days available, and archive statistics.
 
+Call `get_system_status` before trusting recovery or historical analysis. It summarizes latest sync health, archive backfill status, available datasets, auth mode, and warnings for stale data, date-only sleep/HRV normalization, or missing streams.
+
 Every tool response includes `source` or `sources_used`. Do not infer whether data came from latest or archive if the response already says it.
 
-Archive/range tools include `coverage` with `days_requested`, `days_found`, and `completeness_percent`. If a date was defaulted, read `defaults_applied` instead of assuming the user asked for a range.
+Archive/range tools include `coverage` with `days_requested`, `days_found`, `completeness_percent`, `missing_dates`, `available_start_date`, and `available_end_date`. If a date was defaulted, read `defaults_applied` instead of assuming the user asked for a range.
 
-Activity stream and workout analysis tools include `streams_available`, `stream_sample_count`, `full_data_available`, `available_streams`, and `missing_streams`. Use those fields when deciding how complete an activity analysis can be.
+Activity stream and workout analysis tools include `streams_available`, `stream_sample_count`, `full_data_available`, `partial_stream`, `available_streams`, and `missing_streams`. Use those fields when deciding how complete an activity analysis can be.
 
 Before recovery advice, call `get_sync_completeness` or `get_recovery_for_date`. A sync is complete for recovery only when daily, sleep, HRV, stress, body battery, activities, details, and streams are refreshed and `get_recovery_for_date.full_recovery_data_available` is true. If false, use the `missing` list; do not send the user to Strava, Apple Health, or Garmin Connect as a fallback.
 
