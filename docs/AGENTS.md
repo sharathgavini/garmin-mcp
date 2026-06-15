@@ -6,6 +6,7 @@ This file is written for coding agents and MCP clients that need to understand t
 
 Use latest tools for current data:
 
+- `get_data_capabilities`
 - `get_today_summary`
 - `get_range_summary`
 - `get_recent_activities`
@@ -32,6 +33,14 @@ For single-day sleep, HRV, or recovery questions, prefer the dedicated single-da
 - "Use Garmin MCP and get my recovery for 2026-06-14."
 
 For date range tools, `end_date` is optional and defaults to `start_date`. Some clients send `end_date: null` for a single day; this is accepted.
+
+Call `get_data_capabilities` before broad analysis. It tells you the available history range, latest coverage, supported health datasets, supported activity types, stream fields, raw data availability, activity stream availability, total activity count, total days available, and archive statistics.
+
+Every tool response includes `source` or `sources_used`. Do not infer whether data came from latest or archive if the response already says it.
+
+Archive/range tools include `coverage` with `days_requested`, `days_found`, and `completeness_percent`. If a date was defaulted, read `defaults_applied` instead of assuming the user asked for a range.
+
+Activity stream and workout analysis tools include `streams_available`, `stream_sample_count`, `full_data_available`, `available_streams`, and `missing_streams`. Use those fields when deciding how complete an activity analysis can be.
 
 Use stream tools for detailed workout analysis:
 

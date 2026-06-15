@@ -7,8 +7,8 @@ import { z } from "zod";
 import { daysAgoIso, filterByDateRange, inclusiveDays, isIsoDate, latestByDate, todayIso } from "./date.js";
 import { classifySport } from "./sports.js";
 import { syncNow, runningSyncState, type SyncNowOptions } from "./syncNow.js";
-import type { GarminDataReader, JsonObject } from "./types.js";
-import { allActivities, activityId, analyze, latestWorkout, shapeStream, summarizeWorkout, type StreamSource } from "./workouts.js";
+import type { GarminDataReader, JsonObject, Manifest } from "./types.js";
+import { allActivities, activityId, analyze, latestWorkout, shapeStream, streamCompleteness, summarizeWorkout, type StreamSource } from "./workouts.js";
 
 const isoDateSchema = z.string().refine(isIsoDate, "Use YYYY-MM-DD.");
 const optionalIsoDateSchema = z.preprocess((value) => (value === null ? undefined : value), isoDateSchema.optional());
@@ -55,6 +55,7 @@ export const inputShapes = {
     days: daysSchema
   },
   get_sync_status: {},
+  get_data_capabilities: {},
   get_latest_activity: {},
   sync_now: {
     days: z.number().int().min(1).max(30).default(7),
@@ -154,6 +155,7 @@ export const inputSchemas = {
   get_activity_detail: z.object(inputShapes.get_activity_detail),
   get_coach_context: z.object(inputShapes.get_coach_context),
   get_sync_status: z.object(inputShapes.get_sync_status),
+  get_data_capabilities: z.object(inputShapes.get_data_capabilities),
   get_latest_activity: z.object(inputShapes.get_latest_activity),
   sync_now: z.object(inputShapes.sync_now),
   get_latest_workout: z.object(inputShapes.get_latest_workout),
@@ -183,21 +185,24 @@ export const inputSchemas = {
 export type ToolName = keyof typeof inputSchemas;
 
 function ok(data: JsonObject): { content: Array<{ type: "text"; text: string }>; structuredContent: JsonObject } {
+  const structuredContent = "source" in data || "sources_used" in data ? data : { source: "latest", ...data };
   return {
-    content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-    structuredContent: data
+    content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }],
+    structuredContent
   };
 }
 
 type DateRangeInput = { start_date: string; end_date?: string; [key: string]: unknown };
+const healthDatasets = ["daily", "sleep", "hrv", "stress", "body_battery"];
 
-function requestedRange(input: DateRangeInput): { startDate: string; endDate: string; requested_start_date: string; requested_end_date: string } {
+function requestedRange(input: DateRangeInput): { startDate: string; endDate: string; requested_start_date: string; requested_end_date: string; defaults_applied: JsonObject } {
   const endDate = input.end_date ?? input.start_date;
   return {
     startDate: input.start_date,
     endDate,
     requested_start_date: input.start_date,
-    requested_end_date: endDate
+    requested_end_date: endDate,
+    defaults_applied: input.end_date ? {} : { end_date: "start_date" }
   };
 }
 
@@ -206,8 +211,47 @@ function compareRange(input: { period_a_start: string; period_a_end?: string; pe
     periodAStart: input.period_a_start,
     periodAEnd: input.period_a_end ?? input.period_a_start,
     periodBStart: input.period_b_start,
-    periodBEnd: input.period_b_end ?? input.period_b_start
+    periodBEnd: input.period_b_end ?? input.period_b_start,
+    defaults_applied: {
+      ...(input.period_a_end ? {} : { period_a_end: "period_a_start" }),
+      ...(input.period_b_end ? {} : { period_b_end: "period_b_start" })
+    }
   };
+}
+
+function rowDate(row: JsonObject): string | null {
+  const value = row.date ?? row.start_time ?? row.startTimeLocal ?? row.startTimeGMT;
+  return typeof value === "string" && value.length >= 10 ? value.slice(0, 10) : null;
+}
+
+function dateBounds(rows: JsonObject[]): { start: string | null; end: string | null } {
+  const dates = rows.map(rowDate).filter((date): date is string => date !== null).sort();
+  return { start: dates[0] ?? null, end: dates[dates.length - 1] ?? null };
+}
+
+function dateCoverage(startDate: string, endDate: string, rows: JsonObject[]): JsonObject {
+  const daysRequested = inclusiveDays(startDate, endDate);
+  const dates = new Set(rows.map(rowDate).filter((date): date is string => date !== null));
+  const daysFound = dates.size;
+  return {
+    days_requested: daysRequested,
+    days_found: daysFound,
+    completeness_percent: daysRequested > 0 ? Math.round((daysFound / daysRequested) * 10000) / 100 : 0
+  };
+}
+
+function rangeMetadata(range: ReturnType<typeof requestedRange>, rows: JsonObject[]): JsonObject {
+  return {
+    requested_start_date: range.requested_start_date,
+    requested_end_date: range.requested_end_date,
+    coverage: dateCoverage(range.startDate, range.endDate, rows),
+    defaults_applied: range.defaults_applied,
+    source: "archive"
+  };
+}
+
+function uniqueStrings(values: unknown[]): string[] {
+  return [...new Set(values.map((value) => String(value ?? "")).filter(Boolean))].sort();
 }
 
 // Latest readers may not have every collection during first setup, so latest tools degrade with warnings.
@@ -526,10 +570,12 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     if (!activity || !id) {
       return ok({ found: false, message: "No matching Garmin workout found." });
     }
+    const completeness = streamCompleteness(stream);
     if (!stream) {
       return ok({
         found: false,
         activity_id: id,
+        ...completeness,
         message: "No Garmin stream file found for activity_id. Run sync/backfill with activity streams enabled. Garmin MCP currently has only summary/detail data for this activity."
       });
     }
@@ -537,6 +583,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       found: true,
       activity_summary: summarizeWorkout(activity, stream),
       extraction: streamExtractionNotice(stream),
+      ...completeness,
       stream: shapeStream(stream, input)
     });
   }
@@ -545,6 +592,75 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
   async function archiveMetrics(startDate: string, endDate: string, metrics = ["daily", "sleep", "hrv", "stress", "body_battery"]) {
     const entries = await Promise.all(metrics.map(async (metric) => [metric, await reader.readArchiveCollection(metric, startDate, endDate)] as const));
     return Object.fromEntries(entries);
+  }
+
+  async function capabilities(): Promise<JsonObject> {
+    const [manifest, latestActivities, archiveActivitiesRows, latestSleep, latestHrv, latestBodyBattery, latestStress] = await Promise.all([
+      reader.readManifest().catch(() => ({} as Manifest)),
+      reader.readCollection("activities").catch(() => [] as JsonObject[]),
+      reader.readArchiveActivities ? reader.readArchiveActivities() : Promise.resolve([] as JsonObject[]),
+      reader.readCollection("sleep").catch(() => [] as JsonObject[]),
+      reader.readCollection("hrv").catch(() => [] as JsonObject[]),
+      reader.readCollection("body_battery").catch(() => [] as JsonObject[]),
+      reader.readCollection("stress").catch(() => [] as JsonObject[])
+    ]);
+    const activityMap = new Map<string, JsonObject>();
+    for (const activity of [...archiveActivitiesRows, ...latestActivities]) {
+      activityMap.set(activityId(activity) ?? JSON.stringify(activity), activity);
+    }
+    const activities = [...activityMap.values()];
+    const bounds = dateBounds(activities);
+    const historyStart = bounds.start ?? manifest.date_range?.start ?? null;
+    const historyEnd = bounds.end ?? manifest.date_range?.end ?? null;
+    const healthResults =
+      historyStart && historyEnd
+        ? await Promise.all(healthDatasets.map(async (dataset) => [dataset, await reader.readArchiveCollection(dataset, historyStart, historyEnd).catch(() => null)] as const))
+        : [];
+    const healthEntries = Object.fromEntries(healthResults);
+    const sampleStreams = await Promise.all(
+      activities
+        .slice(0, 200)
+        .map(async (activity) => {
+          const id = activityId(activity);
+          return id ? streamFor(id, "auto") : null;
+        })
+    );
+    const streams = sampleStreams.filter((stream): stream is JsonObject => stream !== null);
+    const streamFields = uniqueStrings(streams.flatMap((stream) => (Array.isArray(stream.fields) ? stream.fields : [])));
+    const streamCoverage = activities.length ? Math.round((streams.length / Math.min(activities.length, 200)) * 10000) / 100 : 0;
+    const activitiesBySport = countsBySport(activities);
+    return {
+      source: archiveActivitiesRows.length ? "archive" : "latest",
+      sources_used: archiveActivitiesRows.length && latestActivities.length ? ["archive", "latest"] : archiveActivitiesRows.length ? ["archive"] : ["latest"],
+      history_start: historyStart,
+      history_end: historyEnd,
+      latest_data_coverage: manifest.date_range ?? null,
+      supported_health_datasets: healthDatasets,
+      sleep: Boolean(healthEntries.sleep?.rows.length || latestSleep.length),
+      hrv: Boolean(healthEntries.hrv?.rows.length || latestHrv.length),
+      body_battery: Boolean(healthEntries.body_battery?.rows.length || latestBodyBattery.length),
+      stress: Boolean(healthEntries.stress?.rows.length || latestStress.length),
+      raw_data_available: Boolean(manifest.files?.raw) || false,
+      activity_streams: streams.length > 0,
+      stream_fields: streamFields,
+      supported_stream_fields: streamFields,
+      supported_activity_types: uniqueStrings(activities.map((activity) => activity.type ?? activity.activity_type ?? activity.activityType)),
+      sports: Object.keys(activitiesBySport).sort(),
+      total_activity_count: activities.length,
+      total_days_available: historyStart && historyEnd ? inclusiveDays(historyStart, historyEnd) : 0,
+      archive_statistics: {
+        total_activities: activities.length,
+        activities_by_sport: activitiesBySport,
+        date_coverage: historyStart && historyEnd ? dateCoverage(historyStart, historyEnd, activities) : null,
+        stream_coverage: {
+          activities_checked: Math.min(activities.length, 200),
+          activities_with_streams: streams.length,
+          completeness_percent: streamCoverage
+        },
+        sleep_coverage: healthEntries.sleep ? dateCoverage(historyStart ?? "", historyEnd ?? "", healthEntries.sleep.rows) : null,
+        hrv_coverage: healthEntries.hrv ? dateCoverage(historyStart ?? "", historyEnd ?? "", healthEntries.hrv.rows) : null
+      }
+    };
   }
 
   async function archiveActivities(input: z.infer<typeof inputSchemas.get_activities_by_date_range>) {
@@ -616,10 +732,12 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
     async get_activity_detail(input: z.infer<typeof inputSchemas.get_activity_detail>) {
       const detail = await reader.readActivityDetail(input.activity_id);
+      const stream = await streamFor(input.activity_id);
       return ok({
         activity_id: input.activity_id,
         detail,
         missing: detail === null,
+        ...streamCompleteness(stream),
         streams_omitted: true,
         next_tool_hint: "For full Garmin streams, call get_activity_streams."
       });
@@ -668,16 +786,22 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok(await readSyncStatus());
     },
 
+    async get_data_capabilities() {
+      return ok(await capabilities());
+    },
+
     async get_latest_activity() {
       const status = await readSyncStatus();
       const latestActivityId = status.latest_activity_id;
       if (typeof latestActivityId === "string" && latestActivityId.length > 0) {
-        const detail = await reader.readActivityDetail(latestActivityId);
+        const [detail, stream] = await Promise.all([reader.readActivityDetail(latestActivityId), streamFor(latestActivityId)]);
         return ok({
           activity_id: latestActivityId,
           detail,
           missing: detail === null,
-          source: "latest_sync_status",
+          ...streamCompleteness(stream),
+          source: "latest",
+          source_detail: "latest_sync_status",
           next_tool_hint: "For full Garmin streams, call get_activity_streams or get_latest_workout_streams."
         });
       }
@@ -685,12 +809,14 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       const activities = await safeCollection(reader, "activities");
       const latestActivity = latestByDate(activities);
       if (latestActivity?.id && typeof latestActivity.id === "string") {
-        const detail = await reader.readActivityDetail(latestActivity.id);
+        const [detail, stream] = await Promise.all([reader.readActivityDetail(latestActivity.id), streamFor(latestActivity.id)]);
         return ok({
           activity_id: latestActivity.id,
           detail: detail ?? latestActivity,
           missing: false,
-          source: "activities",
+          ...streamCompleteness(stream),
+          source: "latest",
+          source_detail: "activities",
           next_tool_hint: "For full Garmin streams, call get_activity_streams or get_latest_workout_streams."
         });
       }
@@ -713,6 +839,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         activity_id: id,
         activity,
         summary: summarizeWorkout(activity, stream),
+        ...streamCompleteness(stream),
         has_streams: stream !== null,
         stream_available_fields: Array.isArray(stream?.fields) ? stream.fields : [],
         next_tool_hint: "For full Garmin streams, call get_latest_workout_streams or get_activity_streams."
@@ -730,17 +857,22 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
     async get_activity_streams(input: z.infer<typeof inputSchemas.get_activity_streams>) {
       const stream = await streamFor(input.activity_id, input.source);
+      const completeness = streamCompleteness(stream);
       if (!stream) {
         return ok({
           found: false,
           activity_id: input.activity_id,
+          ...(input.source === "auto" ? { sources_used: ["latest", "archive"] } : { source: input.source }),
+          ...completeness,
           message: "No Garmin stream file found for activity_id. Run sync/backfill with activity streams enabled. Garmin MCP currently has only summary/detail data for this activity."
         });
       }
       return ok({
         found: true,
         activity_id: input.activity_id,
+        ...(input.source === "auto" ? { sources_used: ["latest", "archive"] } : { source: input.source }),
         extraction: streamExtractionNotice(stream),
+        ...completeness,
         stream: shapeStream(stream, input)
       });
     },
@@ -751,6 +883,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       const activity = activities.find((item) => activityId(item) === input.activity_id) ?? (await reader.readActivityDetail(input.activity_id));
       return ok({
         analysis_type: input.analysis_type,
+        ...(input.source === "auto" ? { sources_used: ["latest", "archive"] } : { source: input.source }),
+        ...streamCompleteness(stream),
         ...analyze(activity, stream, input.include_streams)
       });
     },
@@ -762,6 +896,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok({
         analysis_type: input.analysis_type,
         activity_id: id,
+        ...streamCompleteness(stream),
         ...analyze(activity, stream, input.include_streams)
       });
     },
@@ -775,6 +910,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         activity_id: id,
         activity,
         summary: summarizeWorkout(activity, stream),
+        ...streamCompleteness(stream),
         has_streams: stream !== null,
         stream_available_fields: Array.isArray(stream?.fields) ? stream.fields : [],
         hint: "For full Garmin ride streams, call get_latest_ride_streams."
@@ -807,8 +943,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         body_battery: metrics.body_battery.coverage
       };
       return ok({
-        requested_start_date: range.requested_start_date,
-        requested_end_date: range.requested_end_date,
+        ...rangeMetadata(range, metrics.daily.rows),
         date_range: { start: range.startDate, end: range.endDate },
         dataset_coverage: coverage,
         missing_date_warnings: Object.fromEntries(Object.entries(coverage).map(([name, item]) => [name, item.warnings])),
@@ -843,13 +978,12 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         })
       );
       return ok({
-        requested_start_date: range.requested_start_date,
-        requested_end_date: range.requested_end_date,
+        ...rangeMetadata(range, activities),
         date_range: { start: range.startDate, end: range.endDate },
         total_matches: activities.length,
         returned: enriched.length,
         limit: input.limit,
-        coverage: result.coverage,
+        archive_coverage: result.coverage,
         activities: enriched
       });
     },
@@ -869,13 +1003,12 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         })
       );
       return ok({
-        requested_start_date: range.requested_start_date,
-        requested_end_date: range.requested_end_date,
+        ...rangeMetadata(range, activities),
         date_range: { start: range.startDate, end: range.endDate },
         total_matches: activities.length,
         returned: enriched.length,
         limit: input.limit,
-        coverage: result.coverage,
+        archive_coverage: result.coverage,
         workouts: enriched
       });
     },
@@ -884,9 +1017,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       const range = requestedRange(input);
       const metrics = input.metrics ?? ["daily", "sleep", "hrv", "stress", "body_battery"];
       const results = await archiveMetrics(range.startDate, range.endDate, metrics);
+      const rows = Object.values(results).flatMap((result) => result.rows);
       return ok({
-        requested_start_date: range.requested_start_date,
-        requested_end_date: range.requested_end_date,
+        ...rangeMetadata(range, rows),
         date_range: { start: range.startDate, end: range.endDate },
         metrics: Object.fromEntries(Object.entries(results).map(([name, result]) => [name, { records: result.rows, coverage: result.coverage }])),
         warnings: Object.fromEntries(Object.entries(results).map(([name, result]) => [name, result.coverage.warnings]))
@@ -916,7 +1049,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       const bodyBattery = bodyBatteryResult.row;
       return ok({
         date: input.date,
-        source: {
+        sources_used: uniqueStrings([sleepResult.source, hrvResult.source, dailyResult.source, stressResult.source, bodyBatteryResult.source]),
+        source_detail: {
           sleep: sleepResult.source,
           hrv: hrvResult.source,
           daily: dailyResult.source,
@@ -954,8 +1088,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         };
       }
       return ok({
-        requested_start_date: range.requested_start_date,
-        requested_end_date: range.requested_end_date,
+        ...rangeMetadata(range, [...activities, ...Object.values(metrics).flatMap((result) => result.rows)]),
         date_range: { start: range.startDate, end: range.endDate },
         analysis_focus: input.analysis_focus,
         ...periodSummary(activities, Object.fromEntries(Object.entries(metrics).map(([name, result]) => [name, result.rows]))),
@@ -981,10 +1114,16 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       const aVolume = a.summary.activity_volume as JsonObject;
       const bVolume = b.summary.activity_volume as JsonObject;
       return ok({
+        source: "archive",
+        defaults_applied: ranges.defaults_applied,
         requested_period_a_start: ranges.periodAStart,
         requested_period_a_end: ranges.periodAEnd,
         requested_period_b_start: ranges.periodBStart,
         requested_period_b_end: ranges.periodBEnd,
+        coverage: {
+          period_a: dateCoverage(ranges.periodAStart, ranges.periodAEnd, [...a.activities, ...Object.values(a.health).flatMap((result) => result.rows)]),
+          period_b: dateCoverage(ranges.periodBStart, ranges.periodBEnd, [...b.activities, ...Object.values(b.health).flatMap((result) => result.rows)])
+        },
         period_a: { start: ranges.periodAStart, end: ranges.periodAEnd },
         period_b: { start: ranges.periodBStart, end: ranges.periodBEnd },
         activity_count_changes: delta(aVolume.activity_count, bVolume.activity_count),

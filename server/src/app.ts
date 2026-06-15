@@ -54,6 +54,7 @@ export function createApp(
       get_activity_detail: "Return one detailed Garmin activity summary. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
       get_coach_context: "Return compact Garmin context optimized for recent coaching context. For long-range history, use archive tools.",
       get_sync_status: "Return the latest Garmin sync status written by the sync job, including running sync_now lock state when present.",
+      get_data_capabilities: "Return Garmin MCP data capabilities and coverage: archive history bounds, latest coverage, supported health datasets, sports, stream fields, raw data availability, activity stream availability, total activity count, total days available, and archive statistics. Call this first when an AI client needs to know what data exists.",
       get_latest_activity: "Return the latest synced Garmin activity detail. Full Garmin streams are available via get_activity_streams, get_latest_workout_streams, get_latest_ride_streams, and analyze_activity.",
       sync_now: "Start an authenticated background Garmin sync that stores normalized data, raw payloads, and activity streams.",
       get_latest_workout: "Return the latest matching Garmin workout summary with stream availability. For full Garmin streams, call get_latest_workout_streams or get_activity_streams.",

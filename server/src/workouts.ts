@@ -15,6 +15,7 @@ export interface WorkoutFilter {
 }
 
 const preservedFields = new Set(["timestamp", "offset_seconds"]);
+const expectedStreamFields = ["heart_rate", "cadence", "speed_mps", "power_watts", "altitude_m", "distance_m", "position_lat", "position_long", "temperature"];
 
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -87,6 +88,7 @@ export function summarizeWorkout(activity: JsonObject | null, stream: JsonObject
   const maxSpeedMps = numberValue(activity.max_speed_mps ?? activity.maxSpeed);
   const category = classifySport(activityType(activity));
   const fields = Array.isArray(stream?.fields) ? stream.fields : [];
+  const missingFields = stream?.availability && typeof stream.availability === "object" ? (stream.availability as JsonObject).missing_fields ?? [] : [];
   const sampleCount = numberValue(stream?.sample_count) ?? (Array.isArray(stream?.samples) ? stream.samples.length : 0);
 
   return {
@@ -114,11 +116,35 @@ export function summarizeWorkout(activity: JsonObject | null, stream: JsonObject
     normalized_power: activity.normalized_power ?? activity.normPower ?? null,
     avg_power: activity.avg_power ?? activity.averagePower ?? null,
     has_streams: stream !== null,
+    streams_available: stream !== null,
     stream_sample_count: sampleCount,
     stream_available_fields: fields,
-    stream_missing_fields: stream?.availability && typeof stream.availability === "object" ? (stream.availability as JsonObject).missing_fields ?? [] : [],
+    stream_missing_fields: missingFields,
+    full_data_available: stream !== null && Array.isArray(missingFields) && missingFields.length === 0,
     warnings: stream ? [] : ["No Garmin stream file found for this activity."],
     next_tool_hint: "For full Garmin streams, call get_latest_workout_streams or get_activity_streams."
+  };
+}
+
+export function streamCompleteness(stream: JsonObject | null): JsonObject {
+  const availability = stream?.availability && typeof stream.availability === "object" ? (stream.availability as JsonObject) : {};
+  const fields = Array.isArray(availability.available_fields)
+    ? availability.available_fields.map(String)
+    : Array.isArray(stream?.fields)
+      ? stream.fields.map(String)
+      : [];
+  const missing = Array.isArray(availability.missing_fields)
+    ? availability.missing_fields.map(String)
+    : stream
+      ? expectedStreamFields.filter((field) => !fields.includes(field))
+      : expectedStreamFields;
+  const sampleCount = numberValue(stream?.sample_count) ?? (Array.isArray(stream?.samples) ? stream.samples.length : 0);
+  return {
+    streams_available: stream !== null,
+    stream_sample_count: sampleCount,
+    full_data_available: stream !== null && missing.length === 0,
+    available_streams: fields,
+    missing_streams: missing
   };
 }
 

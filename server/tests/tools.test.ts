@@ -165,19 +165,36 @@ describe("tool handlers", () => {
 
   it("handles missing activity details", async () => {
     const result = await handlers.get_activity_detail({ activity_id: "does-not-exist" });
-    assert.deepEqual(result.structuredContent, {
-      activity_id: "does-not-exist",
-      detail: null,
-      missing: true,
-      streams_omitted: true,
-      next_tool_hint: "For full Garmin streams, call get_activity_streams."
-    });
+    assert.equal(result.structuredContent.activity_id, "does-not-exist");
+    assert.equal(result.structuredContent.detail, null);
+    assert.equal(result.structuredContent.missing, true);
+    assert.equal(result.structuredContent.streams_omitted, true);
+    assert.equal(result.structuredContent.source, "latest");
+    assert.equal(result.structuredContent.streams_available, false);
+    assert.equal(result.structuredContent.full_data_available, false);
   });
 
   it("returns sync status", async () => {
     const result = await handlers.get_sync_status();
     assert.equal(result.structuredContent.status, "success");
     assert.equal(result.structuredContent.latest_activity_id, "sample-walk-1");
+    assert.equal(result.structuredContent.source, "latest");
+  });
+
+  it("returns data capabilities and archive statistics", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_data_capabilities();
+    assert.deepEqual(result.structuredContent.sources_used, ["archive"]);
+    assert.equal(result.structuredContent.history_start, "2026-04-20");
+    assert.equal(result.structuredContent.history_end, "2026-06-14");
+    assert.equal(result.structuredContent.sleep, true);
+    assert.equal(result.structuredContent.hrv, true);
+    assert.equal(result.structuredContent.activity_streams, true);
+    assert.ok((result.structuredContent.stream_fields as string[]).includes("heart_rate"));
+    const stats = result.structuredContent.archive_statistics as Record<string, unknown>;
+    assert.equal(stats.total_activities, 5);
+    assert.equal((stats.activities_by_sport as Record<string, number>).cycling, 3);
   });
 
   it("returns latest activity using sync status", async () => {
@@ -207,6 +224,12 @@ describe("tool handlers", () => {
     const fullStream = full.structuredContent.stream as { samples: unknown[]; fields: string[] };
     assert.equal(fullStream.samples.length, 6);
     assert.ok(fullStream.fields.includes("power_watts"));
+    assert.deepEqual(full.structuredContent.sources_used, ["latest", "archive"]);
+    assert.equal(full.structuredContent.streams_available, true);
+    assert.equal(full.structuredContent.stream_sample_count, 6);
+    assert.equal(full.structuredContent.full_data_available, false);
+    assert.ok((full.structuredContent.available_streams as string[]).includes("heart_rate"));
+    assert.ok((full.structuredContent.missing_streams as string[]).includes("position_lat"));
 
     const selected = await handlers.get_activity_streams({
       activity_id: "sample-ride-1",
@@ -328,6 +351,12 @@ describe("tool handlers", () => {
       include_stream_availability: true
     });
     assert.equal(result.structuredContent.total_matches, 3);
+    assert.equal(result.structuredContent.source, "archive");
+    assert.deepEqual(result.structuredContent.coverage, {
+      days_requested: 91,
+      days_found: 3,
+      completeness_percent: 3.3
+    });
     const activities = result.structuredContent.activities as Array<Record<string, unknown>>;
     assert.deepEqual(activities.map((activity) => activity.id), ["ride-jun", "ride-may", "ride-apr"]);
     assert.equal(activities.find((activity) => activity.id === "ride-may")?.has_streams, true);
@@ -358,6 +387,12 @@ describe("tool handlers", () => {
     const result = await archiveHandlers.get_health_metrics_by_date_range(parsed);
     assert.equal(result.structuredContent.requested_start_date, "2026-05-01");
     assert.equal(result.structuredContent.requested_end_date, "2026-05-01");
+    assert.deepEqual(result.structuredContent.defaults_applied, { end_date: "start_date" });
+    assert.deepEqual(result.structuredContent.coverage, {
+      days_requested: 1,
+      days_found: 1,
+      completeness_percent: 100
+    });
     const metrics = result.structuredContent.metrics as Record<string, { records: Array<Record<string, unknown>> }>;
     assert.equal(metrics.sleep.records[0].total_sleep_seconds, 27000);
     assert.equal(metrics.hrv.records[0].last_night_avg, 48);

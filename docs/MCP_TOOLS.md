@@ -4,6 +4,21 @@ This file lists every MCP tool currently registered by the server.
 
 ## Latest and Recent Data
 
+### `get_data_capabilities`
+
+Call this first when an MCP client needs to understand what Garmin data exists before choosing another tool.
+
+Returns:
+
+- Archive history start and end dates
+- Latest data coverage
+- Supported health datasets
+- Supported activity types and sport categories
+- Supported stream fields
+- Raw data and activity stream availability
+- Total activity count and total days available
+- Archive statistics for activity, stream, sleep, and HRV coverage
+
 ### `get_today_summary`
 
 Returns the daily Garmin summary for one date from latest data.
@@ -121,6 +136,18 @@ Returns full Garmin streams for the newest cycling activity.
 
 Archive date inputs use `YYYY-MM-DD`. For single-day queries, callers may provide only `start_date`; `end_date` is optional and defaults to `start_date`. This also works when an MCP client sends `end_date: null`.
 
+Archive/range responses include:
+
+- `requested_start_date`
+- `requested_end_date`
+- `coverage.days_requested`
+- `coverage.days_found`
+- `coverage.completeness_percent`
+- `defaults_applied` when `end_date` was omitted or null
+- `source: "archive"`
+
+Activity range tools also keep partition-level metadata under `archive_coverage`.
+
 ### `get_archive_range_summary`
 
 Reads partitioned archive data for a range and returns activity volume, health trends, coverage, and missing-data warnings.
@@ -216,10 +243,68 @@ Inputs:
 
 ## Claude Examples
 
+- Use Garmin MCP and tell me what data is available.
 - Use Garmin MCP and get my sleep for 2026-06-14.
 - Use Garmin MCP and get my HRV for 2026-06-14.
 - Use Garmin MCP and get my recovery for 2026-06-14.
 - For date range tools, `end_date` is optional and defaults to `start_date`.
+
+## ChatGPT Examples
+
+- First call `get_data_capabilities`, then analyze my latest ride using Garmin data only.
+- Use Garmin MCP to compare my cycling volume from 2026-05-01 to 2026-05-31 against 2026-06-01 to 2026-06-15.
+- Use Garmin MCP to check whether full streams are available before analyzing cadence, heart rate, speed, or power.
+
+## MCP Inspector Examples
+
+List tools, then call:
+
+```json
+{
+  "name": "get_data_capabilities",
+  "arguments": {}
+}
+```
+
+Single-day health query:
+
+```json
+{
+  "name": "get_health_metrics_by_date_range",
+  "arguments": {
+    "start_date": "2026-06-14",
+    "end_date": null,
+    "metrics": ["sleep", "hrv"]
+  }
+}
+```
+
+Stream completeness query:
+
+```json
+{
+  "name": "get_activity_streams",
+  "arguments": {
+    "activity_id": "your-activity-id",
+    "source": "auto",
+    "downsample": false
+  }
+}
+```
+
+## Source and Completeness
+
+`latest` is the fast recent dataset used by daily sync. `archive` is the partitioned historical dataset used for long-range backfill. Tools include `source` or `sources_used` so clients do not need to infer where data came from.
+
+Stream tools include:
+
+- `streams_available`
+- `stream_sample_count`
+- `full_data_available`
+- `available_streams`
+- `missing_streams`
+
+AI clients should not fall back to Strava or other services just because a field is missing. They should report missing Garmin fields and, when useful, ask the user to run sync/backfill with activity streams enabled.
 
 ## Sync and Health
 
