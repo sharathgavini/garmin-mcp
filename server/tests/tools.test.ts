@@ -151,6 +151,14 @@ describe("input validation", () => {
     assert.equal(parsed.end_date, undefined);
   });
 
+  it("allows natural date range presets on archive range tools", () => {
+    const parsed = inputSchemas.get_activities_by_date_range.parse({
+      date_range_preset: "last_30_days"
+    });
+    assert.equal(parsed.date_range_preset, "last_30_days");
+    assert.equal(parsed.start_date, undefined);
+  });
+
   it("still rejects invalid archive dates", () => {
     assert.throws(() =>
       inputSchemas.get_health_metrics_by_date_range.parse({
@@ -427,7 +435,7 @@ describe("tool handlers", () => {
     const rangeTool = tools.find((tool) => tool.name === "get_range_summary");
     assert.ok(rangeTool);
     const schema = rangeTool.inputSchema as { required?: string[]; properties?: Record<string, unknown> };
-    assert.equal(schema.required?.includes("end_date"), false);
+    assert.equal(schema.required?.includes("end_date") ?? false, false);
     assert.match(JSON.stringify(schema.properties?.end_date), /null/);
   });
 
@@ -498,6 +506,83 @@ describe("tool handlers", () => {
     const activities = result.structuredContent.activities as Array<Record<string, unknown>>;
     assert.deepEqual(activities.map((activity) => activity.id), ["ride-jun", "ride-may", "ride-apr"]);
     assert.equal(activities.find((activity) => activity.id === "ride-may")?.has_streams, true);
+  });
+
+  it("returns agent tool guide routing hints", async () => {
+    const result = await handlers.get_tool_guide({ intent: "latest ride analysis" });
+    assert.equal(result.structuredContent.matched_intent, "latest_ride_analysis");
+    assert.match(JSON.stringify(result.structuredContent.routing_rules), /Do not fall back to Strava/);
+    const intents = result.structuredContent.common_intents as Record<string, unknown>;
+    assert.ok(intents.today_recovery);
+  });
+
+  it("audits archive data quality and reports missing records", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.audit_data_quality({
+      start_date: "2026-05-01",
+      end_date: "2026-05-03",
+      source: "archive"
+    });
+    assert.equal(result.structuredContent.status, "warning");
+    assert.equal(result.structuredContent.source, "archive");
+    assert.equal(result.structuredContent.resolved_start_date, "2026-05-01");
+    const summary = result.structuredContent.summary as Record<string, unknown>;
+    assert.equal(summary.days_requested, 3);
+    assert.equal(summary.sleep_days, 1);
+    assert.ok((result.structuredContent.issues as Array<Record<string, unknown>>).some((issue) => issue.dataset === "sleep"));
+  });
+
+  it("returns metric inventory without inventing fields", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_metric_inventory({
+      start_date: "2026-05-01",
+      end_date: "2026-05-01",
+      source: "archive"
+    });
+    assert.ok((result.structuredContent.sleep_fields_observed as string[]).includes("sleep_score"));
+    assert.ok((result.structuredContent.hrv_fields_observed as string[]).includes("hrv_status"));
+    const physiology = result.structuredContent.optional_garmin_physiology_fields as Record<string, boolean>;
+    assert.equal(physiology.training_readiness, true);
+    assert.equal(physiology.vo2_max, false);
+  });
+
+  it("builds recovery and training load dashboards", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const recovery = await archiveHandlers.get_recovery_dashboard({
+      start_date: "2026-05-01",
+      end_date: "2026-05-01"
+    });
+    assert.equal(recovery.structuredContent.recovery_score_estimate, 77);
+    assert.match(String(recovery.structuredContent.score_note), /not Garmin official/);
+
+    const load = await archiveHandlers.get_training_load_dashboard({
+      start_date: "2026-05-01",
+      end_date: "2026-06-14",
+      sport_categories: ["cycling"]
+    });
+    assert.equal(load.structuredContent.total_activity_count, 2);
+    assert.equal((load.structuredContent.activities_by_sport as Record<string, number>).cycling, 2);
+    assert.ok(Array.isArray(load.structuredContent.weekly_totals));
+  });
+
+  it("detects training anomalies and reports schema version", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const anomalies = await archiveHandlers.detect_training_anomalies({
+      start_date: "2026-05-01",
+      end_date: "2026-05-03",
+      focus: "recovery"
+    });
+    assert.equal(anomalies.structuredContent.status, "ok");
+    assert.ok((anomalies.structuredContent.anomalies as Array<Record<string, unknown>>).some((item) => item.type === "missing_data_anomaly"));
+
+    const schema = await archiveHandlers.get_schema_version();
+    assert.equal(schema.structuredContent.oauth_enabled, true);
+    assert.equal((schema.structuredContent.normalized_schema_versions as Record<string, string>).sleep, "2");
+    assert.equal("git_commit" in schema.structuredContent, true);
   });
 
   it("gets health metrics by archive date range", async () => {

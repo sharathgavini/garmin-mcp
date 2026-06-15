@@ -69,6 +69,11 @@ flowchart TD
   Normalize["Normalizers\nsleep, HRV, stress,\nbody battery, activities"]
   LatestFiles["/app/data/latest/*.json"]
   ArchiveFiles["/app/data/archive/year=YYYY/month=MM/*.json"]
+  Stats["Archive statistics\ncoverage + counts"]
+  Discovery["Capability discovery\nget_data_capabilities"]
+  Audit["Data-quality audit\naudit_data_quality"]
+  Dashboards["Dashboards\nrecovery + training load"]
+  Anomalies["Anomaly detection"]
   Tools["MCP tool handlers"]
   Response["AI-readable response\nsource + coverage + completeness"]
 
@@ -77,6 +82,11 @@ flowchart TD
   Normalize --> ArchiveFiles
   LatestFiles --> Tools
   ArchiveFiles --> Tools
+  ArchiveFiles --> Stats
+  Stats --> Discovery
+  Tools --> Audit
+  Tools --> Dashboards
+  Tools --> Anomalies
   Tools --> Response
 ```
 
@@ -87,18 +97,25 @@ The important design rule is that MCP does not call Garmin for ordinary reads. I
 ```mermaid
 flowchart TD
   Question["User asks a Garmin question"]
+  Guide["get_tool_guide"]
   Capabilities["get_data_capabilities"]
   Status["get_system_status"]
+  Audit["audit_data_quality"]
   SingleDay{"Single-date recovery/sleep/HRV?"}
   Latest{"Recent/latest question?"}
   Streams{"Needs detailed workout streams?"}
+  Dashboard{"Needs coaching dashboard or anomaly scan?"}
   Archive{"Long historical range?"}
 
-  Question --> Capabilities
+  Question --> Guide
+  Guide --> Capabilities
   Capabilities --> Status
-  Status --> SingleDay
+  Status --> Audit
+  Audit --> SingleDay
   SingleDay -->|"yes"| RecoveryTools["get_sleep_for_date\nget_hrv_for_date\nget_recovery_for_date"]
-  SingleDay -->|"no"| Latest
+  SingleDay -->|"no"| Dashboard
+  Dashboard -->|"yes"| DashboardTools["get_recovery_dashboard\nget_training_load_dashboard\ndetect_training_anomalies"]
+  Dashboard -->|"no"| Latest
   Latest -->|"yes"| LatestTools["get_today_summary\nget_range_summary\nget_latest_workout"]
   Latest -->|"no"| Archive
   Archive -->|"yes"| ArchiveTools["get_archive_range_summary\nget_health_metrics_by_date_range\nanalyze_training_period"]
@@ -108,9 +125,10 @@ flowchart TD
   Streams -->|"no"| Answer["Answer with source + coverage"]
   StreamTools --> Answer
   RecoveryTools --> Answer
+  DashboardTools --> Answer
 ```
 
-Agents should start with `get_data_capabilities` for broad questions, then call `get_system_status` when recovery readiness, archive freshness, or stream completeness matters. They should use `source`, `sources_used`, `coverage`, `defaults_applied`, and stream completeness fields instead of guessing what data exists.
+Agents should start with `get_tool_guide` when routing is unclear, `get_data_capabilities` for broad questions, then `get_system_status` and `audit_data_quality` when recovery readiness, archive freshness, or stream completeness matters. They should use `source`, `sources_used`, `coverage`, `defaults_applied`, preset resolution fields, and stream completeness fields instead of guessing what data exists.
 
 ## `sync_now` Flow
 

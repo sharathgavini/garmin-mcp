@@ -52,6 +52,11 @@ For AI clients, the recommended first calls are:
 
 - `get_data_capabilities` to discover available date ranges, datasets, sports, streams, and archive statistics.
 - `get_system_status` to check sync health, archive backfill status, stale-data warnings, and whether sleep/HRV normalization or activity streams need attention.
+- `get_tool_guide` when Claude/ChatGPT needs routing help.
+- `audit_data_quality` before long-range coaching or when data looks incomplete.
+- `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies` for coaching-ready summaries.
+
+Range-oriented tools accept explicit `start_date`/`end_date` or presets such as `last_14_days`, `last_30_days`, and `last_90_days`.
 
 ## Common Commands
 

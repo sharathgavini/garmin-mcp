@@ -24,6 +24,17 @@ docker exec garmin-mcp python -m sync.main \
 
 Use `get_activity_streams`, `get_latest_workout_streams`, or `get_latest_ride_streams` for full stream retrieval. Streams are not downsampled unless `downsample=true` is requested.
 
+Agent-facing stream completeness appears in MCP responses:
+
+- `streams_available`
+- `stream_sample_count`
+- `full_data_available`
+- `partial_stream`
+- `available_streams`
+- `missing_streams`
+
+Use `audit_data_quality` to find missing stream files or stream files with `sample_count=0` across a date range.
+
 ## Extraction Diagnostics
 
 Stream files now include:

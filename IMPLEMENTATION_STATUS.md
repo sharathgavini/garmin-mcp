@@ -9,6 +9,12 @@ Current core capabilities:
 - OAuth and bearer-token protected MCP HTTP server
 - Agent-facing data capability discovery through `get_data_capabilities`
 - Agent-facing health/freshness diagnostics through `get_system_status`
+- Agent tool routing through `get_tool_guide`
+- Local data-quality auditing through `audit_data_quality`
+- Field inventory through `get_metric_inventory`
+- Recovery and training-load dashboards
+- Conservative anomaly detection
+- Natural date presets on range-oriented tools
 - Nullable/optional date-range `end_date` schemas for single-day queries
 - Single-date sleep, HRV, and recovery tools
 

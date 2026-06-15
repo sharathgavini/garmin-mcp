@@ -44,6 +44,63 @@ Returns:
 - Auth mode summary with secrets redacted
 - Warnings for stale latest data, date-only sleep/HRV normalization, missing streams, or running backfill
 
+### `get_tool_guide`
+
+Returns routing guidance so Claude/ChatGPT can choose the correct tool family.
+
+Inputs:
+
+- `intent` optional string
+
+Use this when an agent is unsure whether it needs latest data, archive data, sleep/HRV single-date tools, stream tools, dashboards, or audits. The response explicitly says not to fall back to Strava unless the user asks.
+
+### `audit_data_quality`
+
+Audits local Garmin JSON only. It does not call Garmin.
+
+Inputs:
+
+- `date_range_preset` optional, such as `last_90_days`
+- `start_date` optional `YYYY-MM-DD`
+- `end_date` optional and nullable
+- `datasets` optional
+- `source` optional: `latest`, `archive`, or `auto`
+
+Reports missing days, stale data, date-only sleep/HRV normalization, missing activity details, missing/empty streams, and sync status issues with `ok`, `warning`, or `critical` severity.
+
+### `get_metric_inventory`
+
+Shows exactly which fields exist in the local dataset.
+
+Inputs:
+
+- `date_range_preset` optional
+- `start_date` optional
+- `end_date` optional and nullable
+- `source` optional
+
+Returns observed fields for health datasets, sleep, HRV, activities, activity details, activity streams, raw payload availability, and optional Garmin physiology fields such as training readiness, acute load, VO2 max, FTP, endurance score, and race predictor.
+
+### Date Presets
+
+Range-oriented tools accept either explicit dates or `date_range_preset`.
+
+Supported presets:
+
+- `today`
+- `yesterday`
+- `last_7_days`
+- `last_14_days`
+- `last_30_days`
+- `last_90_days`
+- `this_week`
+- `last_week`
+- `this_month`
+- `last_month`
+- `year_to_date`
+
+Responses include `date_range_preset`, `resolved_start_date`, and `resolved_end_date`.
+
 ### `get_today_summary`
 
 Returns the daily Garmin summary for one date from latest data.
@@ -256,6 +313,26 @@ Inputs:
 
 Returns `full_recovery_data_available` and a `missing` list. When `full_recovery_data_available` is `true`, Garmin MCP has enough recovery data for that date and AI clients should treat Garmin MCP as the system of record.
 
+### `get_recovery_dashboard`
+
+Returns a recovery dashboard for a range or preset, defaulting to `last_14_days`.
+
+Uses sleep, HRV, body battery, stress, resting HR, and recent training activities. The `recovery_score_estimate` is transparent and is not Garmin official Training Readiness.
+
+### `get_training_load_dashboard`
+
+Returns training load and sport mix for a range or preset, defaulting to `last_30_days`.
+
+Includes total activity count, duration, distance, sport mix, duration by sport, weekly totals, training effect averages where present, estimated acute/chronic duration, ramp rate estimate, and missing-data warnings.
+
+### `detect_training_anomalies`
+
+Flags conservative patterns that may matter for recovery or training decisions: HRV below baseline, sleep drop, low body battery, stress spike, load spike, consecutive training days, and missing data.
+
+### `get_schema_version`
+
+Returns MCP server version, optional git commit from `GIT_COMMIT` or `REVISION`, normalized schema versions, activity stream schema version, OAuth enabled boolean, data dirs, and generated timestamp.
+
 ### `analyze_training_period`
 
 Analyzes an explicit archive training period.
@@ -288,12 +365,17 @@ Inputs:
 - Use Garmin MCP and get my HRV for 2026-06-14.
 - Use Garmin MCP and get my recovery for 2026-06-14.
 - For date range tools, `end_date` is optional and defaults to `start_date`.
+- Use Garmin MCP and audit data quality for the last 90 days.
+- Use Garmin MCP and show my recovery dashboard for last_14_days.
+- Use Garmin MCP and detect training anomalies for last_30_days.
 
 ## ChatGPT Examples
 
 - First call `get_data_capabilities` and `get_system_status`, then analyze my latest ride using Garmin data only.
+- Use Garmin MCP and show which tool I should use to analyze my latest ride.
 - Use Garmin MCP to compare my cycling volume from 2026-05-01 to 2026-05-31 against 2026-06-01 to 2026-06-15.
 - Use Garmin MCP to check whether full streams are available before analyzing cadence, heart rate, speed, or power.
+- Use Garmin MCP and show my training load dashboard for last_30_days.
 
 ## MCP Inspector Examples
 

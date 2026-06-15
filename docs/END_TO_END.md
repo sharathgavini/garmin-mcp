@@ -306,11 +306,23 @@ Use Garmin MCP, sync now with force refresh, then tell me whether recovery data 
 
 Expected behavior:
 
+- ChatGPT may call `get_tool_guide` if it is unsure which tool family applies.
 - ChatGPT should call `get_data_capabilities`.
 - ChatGPT should call `get_system_status` when freshness, backfill state, or stream completeness matters.
+- ChatGPT can call `audit_data_quality` for preset ranges such as `last_90_days`.
 - For recovery, ChatGPT should call `get_recovery_for_date`.
 - If data is incomplete, the response should include `missing`.
 - If `full_recovery_data_available` is true, Garmin MCP is the system of record.
+
+Coaching-ready prompts:
+
+```text
+Use Garmin MCP and audit data quality for the last 90 days.
+Use Garmin MCP and show my recovery dashboard for last_14_days.
+Use Garmin MCP and show my training load dashboard for last_30_days.
+Use Garmin MCP and detect training anomalies for last_30_days.
+Use Garmin MCP and show which tool I should use to analyze my latest ride.
+```
 
 ## 12. Daily Operation
 

@@ -83,8 +83,15 @@ Archive-aware MCP tools:
 - `get_activities_by_date_range`
 - `get_workouts_by_date_range`
 - `get_health_metrics_by_date_range`
+- `audit_data_quality`
+- `get_metric_inventory`
+- `get_training_load_dashboard`
+- `get_recovery_dashboard`
+- `detect_training_anomalies`
 - `analyze_training_period`
 - `compare_training_periods`
+
+These tools accept `date_range_preset` values such as `last_30_days`, `last_90_days`, `this_month`, `last_month`, and `year_to_date`. Responses include resolved start/end dates so agents do not silently guess date math.
 
 Example prompts:
 
@@ -94,6 +101,8 @@ Use Garmin MCP and get all road biking activities between 2025-10-01 and 2026-06
 Use Garmin MCP and compare my cycling volume in May vs June.
 Use Garmin MCP and show my HRV trend from October 2025 to today.
 Use Garmin MCP and analyze my training period from 2026-05-01 to 2026-06-14.
+Use Garmin MCP and audit data quality for the last 90 days.
+Use Garmin MCP and show my recovery dashboard for last_14_days.
 ```
 
 If archive coverage is incomplete, these tools return the requested range, loaded/missing partitions, available archive dates, missing dates, and warnings instead of silently answering from `/app/data/latest`.

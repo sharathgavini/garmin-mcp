@@ -10,4 +10,6 @@ The intended production setup is TrueNAS with persistent bind mounts:
 
 The MCP server reads normalized JSON. It does not call Garmin for ordinary read tools. Garmin API access happens through Python sync/backfill commands and authenticated `sync_now`.
 
-Agent clients should start with `get_data_capabilities`, then call `get_system_status` when data freshness or completeness matters.
+Agent clients should start with `get_tool_guide` when routing is unclear, call `get_data_capabilities`, then call `get_system_status` and `audit_data_quality` when data freshness or completeness matters.
+
+Range tools support natural presets such as `last_14_days`, `last_30_days`, and `last_90_days`. Coaching-ready summaries are exposed through `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.

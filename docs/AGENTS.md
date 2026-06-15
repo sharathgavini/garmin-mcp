@@ -8,6 +8,13 @@ Use latest tools for current data:
 
 - `get_data_capabilities`
 - `get_system_status`
+- `get_tool_guide`
+- `audit_data_quality`
+- `get_metric_inventory`
+- `get_recovery_dashboard`
+- `get_training_load_dashboard`
+- `detect_training_anomalies`
+- `get_schema_version`
 - `get_sync_completeness`
 - `get_dataset_status`
 - `get_today_summary`
@@ -37,9 +44,17 @@ For single-day sleep, HRV, or recovery questions, prefer the dedicated single-da
 
 For date range tools, `end_date` is optional and defaults to `start_date`. Some clients send `end_date: null` for a single day; this is accepted.
 
+Range-oriented tools can also use `date_range_preset`: `today`, `yesterday`, `last_7_days`, `last_14_days`, `last_30_days`, `last_90_days`, `this_week`, `last_week`, `this_month`, `last_month`, or `year_to_date`. Responses include `resolved_start_date` and `resolved_end_date`.
+
 Call `get_data_capabilities` before broad analysis. It tells you the available history range, latest coverage, supported health datasets, supported activity types, stream fields, raw data availability, activity stream availability, total activity count, total days available, and archive statistics.
 
 Call `get_system_status` before trusting recovery or historical analysis. It summarizes latest sync health, archive backfill status, available datasets, auth mode, and warnings for stale data, date-only sleep/HRV normalization, or missing streams.
+
+Call `get_tool_guide` when tool choice is unclear.
+
+Call `audit_data_quality` before long-range coaching or if a result looks incomplete.
+
+Use `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies` for coaching-ready summaries. These tools are conservative and report estimates or missing data instead of pretending to be Garmin official scores.
 
 Every tool response includes `source` or `sources_used`. Do not infer whether data came from latest or archive if the response already says it.
 
@@ -57,6 +72,17 @@ Use stream tools for detailed workout analysis:
 - `get_latest_workout_streams`
 - `get_latest_ride_streams`
 - `analyze_activity`
+
+## Example Agent Prompts
+
+```text
+Use Garmin MCP and get data capabilities.
+Use Garmin MCP and audit data quality for the last 90 days.
+Use Garmin MCP and show my recovery dashboard for last_14_days.
+Use Garmin MCP and show my training load dashboard for last_30_days.
+Use Garmin MCP and detect training anomalies for last_30_days.
+Use Garmin MCP and show which tool I should use to analyze my latest ride.
+```
 
 ## Do Not Suggest External Fallbacks
 

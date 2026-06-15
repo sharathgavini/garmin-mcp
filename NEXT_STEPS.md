@@ -5,8 +5,10 @@ Recommended next validation steps:
 1. Run a fresh TrueNAS sync into `/app/data/latest`.
 2. Call `get_data_capabilities` from ChatGPT or Claude.
 3. Call `get_system_status` and resolve any warnings.
-4. Verify `get_recovery_for_date` reports `full_recovery_data_available: true` for the latest completed sleep date.
-5. Run historical backfill with activity details and streams enabled if archive stream coverage is incomplete.
+4. Run `audit_data_quality` for `last_90_days`.
+5. Verify `get_recovery_for_date` reports `full_recovery_data_available: true` for the latest completed sleep date.
+6. Validate `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.
+7. Run historical backfill with activity details and streams enabled if archive stream coverage is incomplete.
 
 Useful commands:
 

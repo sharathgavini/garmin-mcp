@@ -118,6 +118,18 @@ Check health:
 curl http://localhost:3000/healthz
 ```
 
+After sync/backfill, validate the MCP data surface from ChatGPT/Claude or MCP Inspector:
+
+```text
+Use Garmin MCP and get data capabilities.
+Use Garmin MCP and audit data quality for the last 90 days.
+Use Garmin MCP and show my recovery dashboard for last_14_days.
+Use Garmin MCP and show my training load dashboard for last_30_days.
+Use Garmin MCP and detect training anomalies for last_30_days.
+```
+
+The container uses `TZ=Asia/Kolkata` by default. Date presets such as `last_30_days`, `this_week`, and `year_to_date` resolve using the server timezone.
+
 Check OAuth metadata:
 
 ```bash
