@@ -251,9 +251,29 @@ export function decimateByResolution(stream: JsonObject, resolutionSeconds?: num
   };
 }
 
-export function shapeStream(stream: JsonObject, options: { fields?: string[]; downsample?: boolean; max_points?: number | null; resolution_seconds?: number | null }): JsonObject {
+export function filterPedalingOnly(stream: JsonObject, minCadenceRpm = 30): JsonObject {
+  if (!Array.isArray(stream.samples)) {
+    return stream;
+  }
+  const samples = stream.samples as JsonObject[];
+  const selected = samples.filter((sample) => {
+    const cadence = numberValue(sample.cadence);
+    return cadence !== null && cadence >= minCadenceRpm;
+  });
+  return {
+    ...stream,
+    samples: selected,
+    pedaling_only: true,
+    min_cadence_rpm: minCadenceRpm,
+    original_sample_count: samples.length,
+    sample_count: selected.length
+  };
+}
+
+export function shapeStream(stream: JsonObject, options: { fields?: string[]; downsample?: boolean; max_points?: number | null; resolution_seconds?: number | null; pedaling_only?: boolean; min_cadence_rpm?: number }): JsonObject {
   const normalized = normalizeRequestedStreamFields(options.fields);
-  const filtered = selectStreamFields(stream, normalized.fields);
+  const pedalingFiltered = options.pedaling_only ? filterPedalingOnly(stream, options.min_cadence_rpm ?? 30) : stream;
+  const filtered = selectStreamFields(pedalingFiltered, normalized.fields);
   if (Object.keys(normalized.aliases_used).length > 0) {
     filtered.field_aliases_used = normalized.aliases_used;
   }

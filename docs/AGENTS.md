@@ -48,11 +48,14 @@ The response includes `defaults_applied`, `resolved_start_date`, and `resolved_e
 
 Range-oriented tools can also use `date_range_preset`: `today`, `yesterday`, `last_7_days`, `last_14_days`, `last_30_days`, `last_90_days`, `this_week`, `last_week`, `this_month`, `last_month`, or `year_to_date`. Responses include `resolved_start_date` and `resolved_end_date`.
 
+For simple recent windows, `get_range_summary`, `get_archive_range_summary`, and `get_health_metrics_by_date_range` can use `days`. `days` means the last N days ending today and takes precedence over explicit `start_date`/`end_date` if both are supplied.
+
 Call `get_data_capabilities` before broad analysis. It tells you the available history range, latest coverage, supported health datasets, supported activity types, stream fields, raw data availability, activity stream availability, total activity count, total days available, and archive statistics.
 
 Prefer the manifest-backed `datasets` block inside `get_data_capabilities` when planning date-range calls. It reports `earliest_date`, `latest_date`, and `record_count` for daily, sleep, HRV, stress, body battery, activities, activity streams, and activity details. If a bound is `null`, do not query that dataset/range unless the user explicitly asks you to investigate missing data.
 
 Call `get_system_status` before trusting recovery or historical analysis. It summarizes latest sync health, archive backfill status, available datasets, auth mode, and warnings for stale data, date-only sleep/HRV normalization, or missing streams.
+Pass `include_completeness: true` when you need the cheap manifest-derived raw-present/normalized-missing summary during normal status reads.
 
 Call `get_tool_guide` when tool choice is unclear.
 
@@ -91,6 +94,8 @@ Use stream tools for detailed workout analysis:
 - `get_latest_workout_streams`
 - `get_latest_ride_streams`
 - `analyze_activity`
+
+For cycling cadence analysis, pass `pedaling_only: true` to `get_activity_streams`. The optional `min_cadence_rpm` threshold defaults to 30, and filtering happens before stream decimation so all fields remain sample-aligned.
 
 ## Example Agent Prompts
 

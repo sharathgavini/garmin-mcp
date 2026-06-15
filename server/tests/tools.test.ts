@@ -331,6 +331,32 @@ describe("tool handlers", () => {
     assert.ok((result.structuredContent.available_datasets as Record<string, unknown>).health);
     assert.ok((result.structuredContent.warnings as string[]).some((warning) => warning.includes("sleep normalization")));
     assert.ok((result.structuredContent.warnings as string[]).some((warning) => warning.includes("activity streams")));
+    assert.equal("completeness" in result.structuredContent, false);
+  });
+
+  it("optionally reports raw-present normalized-missing completeness from manifest only", async () => {
+    const reader = new ManifestOnlyReader({
+      generated_at: "2026-06-15T06:00:00Z",
+      schema_version: "archive_rollups_v1",
+      datasets: {
+        daily: { record_count: 1, date_bounds: { start: "2026-06-01", end: "2026-06-01" } },
+        sleep: { record_count: 0, date_bounds: { start: null, end: null } },
+        hrv: { record_count: 1, date_bounds: { start: "2026-06-01", end: "2026-06-01" } }
+      },
+      raw_datasets: {
+        sleep: { record_count: 2, date_bounds: { start: "2026-06-01", end: "2026-06-02" } },
+        hrv: { record_count: 1, date_bounds: { start: "2026-06-01", end: "2026-06-01" } }
+      }
+    });
+    const result = await createToolHandlers(reader).get_system_status({ include_completeness: true });
+    const completeness = result.structuredContent.completeness as Record<string, unknown>;
+    const missing = completeness.raw_present_normalized_missing as Array<Record<string, unknown>>;
+
+    assert.equal(reader.archiveScanCount, 0);
+    assert.equal(completeness.source, "partition_manifest");
+    assert.equal(completeness.raw_present_normalized_missing_count, 1);
+    assert.equal(missing[0].dataset, "sleep");
+    assert.equal(missing[0].raw_record_count, 2);
   });
 
   it("returns dataset status and sync completeness diagnostics", async () => {
@@ -391,6 +417,40 @@ describe("tool handlers", () => {
     assert.equal(selectedStream.downsampled, true);
     assert.deepEqual(Object.keys(selectedStream.samples[0]).sort(), ["heart_rate", "offset_seconds", "speed_mps"]);
     assert.deepEqual(selected.structuredContent.field_aliases_used, { speed: "speed_mps" });
+  });
+
+  it("filters activity streams to pedaling-only samples while keeping fields aligned", async () => {
+    const result = await handlers.get_activity_streams({
+      activity_id: "sample-ride-1",
+      source: "auto",
+      downsample: false,
+      pedaling_only: true,
+      min_cadence_rpm: 85
+    });
+    const stream = result.structuredContent.stream as { samples: Array<Record<string, number>>; sample_count: number; original_sample_count: number; pedaling_only: boolean };
+
+    assert.equal(stream.pedaling_only, true);
+    assert.equal(stream.original_sample_count, 6);
+    assert.equal(stream.sample_count, 2);
+    assert.deepEqual(stream.samples.map((sample) => sample.offset_seconds), [180, 240]);
+    assert.deepEqual(stream.samples.map((sample) => sample.heart_rate), [151, 158]);
+    assert.ok(stream.samples.every((sample) => sample.cadence >= 85));
+  });
+
+  it("filters pedaling-only before resolution decimation", async () => {
+    const result = await handlers.get_activity_streams({
+      activity_id: "sample-ride-1",
+      source: "auto",
+      downsample: false,
+      pedaling_only: true,
+      min_cadence_rpm: 70,
+      resolution_seconds: 120
+    });
+    const stream = result.structuredContent.stream as { samples: Array<Record<string, number>>; original_sample_count: number; resolution_seconds: number };
+
+    assert.equal(stream.resolution_seconds, 120);
+    assert.equal(stream.original_sample_count, 5);
+    assert.deepEqual(stream.samples.map((sample) => sample.offset_seconds), [60, 120, 240, 300]);
   });
 
   it("returns structured errors for invalid stream fields", async () => {
@@ -863,6 +923,41 @@ describe("tool handlers", () => {
     const health = await archiveHandlers.get_health_metrics_by_date_range({ start_date: "2026-05-01", end_date: null, metrics: ["sleep"] });
     assert.equal(health.structuredContent.error, undefined);
     assert.equal(health.structuredContent.resolved_end_date, "2026-05-01");
+  });
+
+  it("accepts days as a range fallback ending today", async () => {
+    const latestRange = await handlers.get_range_summary({ days: 3 });
+    assert.equal(latestRange.structuredContent.resolved_start_date, "2026-06-13");
+    assert.equal(latestRange.structuredContent.resolved_end_date, "2026-06-15");
+    assert.deepEqual(latestRange.structuredContent.defaults_applied, { days: "last_n_days_ending_today" });
+
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const archiveSummary = await archiveHandlers.get_archive_range_summary({ days: 2 });
+    const health = await archiveHandlers.get_health_metrics_by_date_range({ days: 46, metrics: ["sleep"] });
+    assert.equal(archiveSummary.structuredContent.resolved_start_date, "2026-06-14");
+    assert.equal(archiveSummary.structuredContent.resolved_end_date, "2026-06-15");
+    assert.equal(health.structuredContent.resolved_start_date, "2026-05-01");
+    assert.equal(health.structuredContent.resolved_end_date, "2026-06-15");
+  });
+
+  it("days takes precedence over explicit date ranges", async () => {
+    const result = await handlers.get_range_summary({ days: 3, start_date: "2026-06-01", end_date: "2026-06-02" });
+
+    assert.equal(result.structuredContent.resolved_start_date, "2026-06-13");
+    assert.equal(result.structuredContent.resolved_end_date, "2026-06-15");
+    assert.deepEqual(result.structuredContent.defaults_applied, {
+      days: "last_n_days_ending_today",
+      explicit_dates: "ignored_because_days_was_provided"
+    });
+  });
+
+  it("invalid days returns a structured tool error", async () => {
+    const result = await handlers.get_range_summary({ days: 0 });
+
+    assert.equal(result.structuredContent.error, true);
+    assert.equal(result.structuredContent.error_code, "INVALID_DAYS");
+    assert.equal(result.structuredContent.param, "days");
   });
 
   it("gets normalized sleep for one date", async () => {

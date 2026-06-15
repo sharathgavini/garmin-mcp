@@ -58,8 +58,11 @@ For AI clients, the recommended first calls are:
 
 Range-oriented tools accept explicit `start_date`/`end_date` or presets such as `last_14_days`, `last_30_days`, and `last_90_days`.
 If `end_date` is omitted or `null`, MCP defaults it to `start_date` for single-day safety and returns the resolved dates in the response.
+`get_range_summary`, `get_archive_range_summary`, and `get_health_metrics_by_date_range` also accept `days` as an opt-in shortcut for the last N days ending today. When `days` is supplied, it takes precedence over explicit dates and the response reports that in `defaults_applied`.
 
 `get_data_capabilities` includes a manifest-backed `datasets` block for `daily`, `sleep`, `hrv`, `stress`, `body_battery`, `activities`, `activity_streams`, and `activity_details`. Each entry reports `earliest_date`, `latest_date`, and `record_count` from `partition_manifest.json`; values that cannot be derived cheaply are returned as `null` instead of scanning the archive.
+
+`get_system_status` defaults to its existing compact shape. Pass `include_completeness: true` to include a cheap manifest-derived summary of datasets where raw records are present but normalized records are missing.
 
 ## Common Commands
 

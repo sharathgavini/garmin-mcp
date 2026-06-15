@@ -23,6 +23,10 @@ const archiveRangeShape = {
   start_date: isoDateSchema.optional(),
   end_date: optionalIsoDateSchema
 };
+const daysRangeShape = {
+  ...archiveRangeShape,
+  days: z.number().int().optional()
+};
 const presetRangeShape = {
   ...archiveRangeShape,
   date_range_preset: dateRangePresetSchema.optional()
@@ -50,7 +54,8 @@ export const inputShapes = {
     date: isoDateSchema.optional()
   },
   get_range_summary: {
-    ...presetRangeShape
+    ...presetRangeShape,
+    days: z.number().int().optional()
   },
   get_recent_activities: {
     days: daysSchema
@@ -63,7 +68,9 @@ export const inputShapes = {
   },
   get_sync_status: {},
   get_data_capabilities: {},
-  get_system_status: {},
+  get_system_status: {
+    include_completeness: z.boolean().default(false)
+  },
   get_tool_guide: {
     intent: z.string().optional()
   },
@@ -112,6 +119,8 @@ export const inputShapes = {
   get_activity_streams: {
     activity_id: z.string().min(1),
     source: streamSourceSchema,
+    pedaling_only: z.boolean().optional(),
+    min_cadence_rpm: z.number().min(0).optional(),
     ...streamOptionsShape
   },
   analyze_activity: {
@@ -137,7 +146,10 @@ export const inputShapes = {
     days: workoutDaysSchema,
     ...streamOptionsShape
   },
-  get_archive_range_summary: archiveActivityFilterShape,
+  get_archive_range_summary: {
+    ...archiveActivityFilterShape,
+    days: z.number().int().optional()
+  },
   get_activities_by_date_range: {
     ...archiveActivityFilterShape,
     limit: z.number().int().min(1).max(1000).default(100),
@@ -153,7 +165,7 @@ export const inputShapes = {
     fields: z.array(z.string()).optional()
   },
   get_health_metrics_by_date_range: {
-    ...archiveRangeShape,
+    ...daysRangeShape,
     metrics: z.array(z.enum(["daily", "sleep", "hrv", "stress", "body_battery"])).optional(),
     fields: z.array(z.string()).optional()
   },
@@ -189,11 +201,14 @@ export const inputShapes = {
   health_check: {}
 };
 
-function hasRangeInput(input: { start_date?: string; date_range_preset?: string }): boolean {
-  return Boolean(input.start_date || input.date_range_preset);
+function hasRangeInput(input: { start_date?: string; date_range_preset?: string; days?: number }): boolean {
+  return Boolean(input.start_date || input.date_range_preset || input.days !== undefined);
 }
 
-function orderedRangeInput(input: { start_date?: string; end_date?: string | null }): boolean {
+function orderedRangeInput(input: { start_date?: string; end_date?: string | null; days?: number }): boolean {
+  if (input.days !== undefined) {
+    return true;
+  }
   return !input.start_date || input.start_date <= (input.end_date ?? input.start_date);
 }
 
@@ -276,7 +291,7 @@ function toolError(error_code: string, message: string, extra: JsonObject = {}) 
 }
 
 type DateRangePreset = z.infer<typeof dateRangePresetSchema>;
-type DateRangeInput = { start_date?: string; end_date?: string | null; date_range_preset?: DateRangePreset; [key: string]: unknown };
+type DateRangeInput = { start_date?: string; end_date?: string | null; date_range_preset?: DateRangePreset; days?: number; [key: string]: unknown };
 const healthDatasets = ["daily", "sleep", "hrv", "stress", "body_battery"];
 
 function localDateParts(date = new Date()): { year: number; month: number; day: number } {
@@ -336,8 +351,35 @@ function resolveDateRangePreset(preset: DateRangePreset, now = new Date()): { st
   return { startDate: `${parts.year}-01-01`, endDate: today };
 }
 
+function rangeDaysError(input: DateRangeInput): ReturnType<typeof toolError> | null {
+  return input.days !== undefined && input.days < 1
+    ? toolError("INVALID_DAYS", "days must be a positive integer.", {
+        param: "days",
+        received: input.days,
+        hint: "Use days >= 1, or omit days and provide start_date/end_date."
+      })
+    : null;
+}
+
 function requestedRange(input: DateRangeInput, defaultPreset?: DateRangePreset): { startDate: string; endDate: string; requested_start_date: string | null; requested_end_date: string; defaults_applied: JsonObject; date_range_preset: string | null; resolved_start_date: string; resolved_end_date: string } {
   // Defaulting happens after validation so handlers never silently collapse ranges.
+  if (input.days !== undefined) {
+    const endDate = todayIso();
+    const startDate = daysAgoIso(input.days - 1);
+    return {
+      startDate,
+      endDate,
+      requested_start_date: input.start_date ?? null,
+      requested_end_date: input.end_date ?? endDate,
+      defaults_applied: {
+        days: "last_n_days_ending_today",
+        ...(input.start_date || input.end_date != null ? { explicit_dates: "ignored_because_days_was_provided" } : {})
+      },
+      date_range_preset: null,
+      resolved_start_date: startDate,
+      resolved_end_date: endDate
+    };
+  }
   const preset = input.date_range_preset ?? defaultPreset;
   const presetRange = preset ? resolveDateRangePreset(preset) : null;
   const startDate = input.start_date ?? presetRange?.startDate;
@@ -502,6 +544,44 @@ function capabilitiesFromPartitionManifest(partitionManifest: JsonObject | null,
     history_start: datedBounds[0] ?? null,
     history_end: datedBounds[datedBounds.length - 1] ?? null,
     datasets: datasetEntries
+  };
+}
+
+function rawDatasetEntries(partitionManifest: JsonObject | null): Record<string, JsonObject> {
+  if (!partitionManifest || typeof partitionManifest !== "object") {
+    return {};
+  }
+  for (const key of ["raw_datasets", "raw", "raw_archive"]) {
+    const value = partitionManifest[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, JsonObject>;
+    }
+  }
+  return {};
+}
+
+function completenessFromManifest(caps: JsonObject): JsonObject {
+  const archiveIndex = (caps.archive_index && typeof caps.archive_index === "object" ? caps.archive_index : null) as JsonObject | null;
+  const normalized = (caps.datasets && typeof caps.datasets === "object" ? caps.datasets : {}) as Record<string, JsonObject>;
+  const raw = rawDatasetEntries(archiveIndex);
+  const rawPresentNormalizedMissing: JsonObject[] = [];
+  for (const dataset of healthDatasets) {
+    const rawCount = Number(raw[dataset]?.record_count ?? 0);
+    const normalizedCount = Number(normalized[dataset]?.record_count ?? 0);
+    if (rawCount > 0 && normalizedCount === 0) {
+      rawPresentNormalizedMissing.push({
+        dataset,
+        raw_record_count: rawCount,
+        normalized_record_count: normalizedCount,
+        earliest_date: raw[dataset]?.earliest_date ?? (raw[dataset]?.date_bounds as JsonObject | undefined)?.start ?? null,
+        latest_date: raw[dataset]?.latest_date ?? (raw[dataset]?.date_bounds as JsonObject | undefined)?.end ?? null
+      });
+    }
+  }
+  return {
+    source: archiveIndex ? "partition_manifest" : "unavailable",
+    raw_present_normalized_missing: rawPresentNormalizedMissing,
+    raw_present_normalized_missing_count: rawPresentNormalizedMissing.length
   };
 }
 
@@ -1256,7 +1336,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     };
   }
 
-  async function systemStatus(): Promise<JsonObject> {
+  async function systemStatus(input: z.infer<typeof inputSchemas.get_system_status> = { include_completeness: false }): Promise<JsonObject> {
     const [caps, syncStatus, datasets, manifest, latestSleep, latestHrv] = await Promise.all([
       capabilities(),
       readSyncStatus(),
@@ -1303,6 +1383,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         secrets_redacted: true
       },
       warnings: uniqueStrings(warnings),
+      ...(input.include_completeness ? { completeness: completenessFromManifest(caps) } : {}),
       version: process.env.npm_package_version ?? null
     };
   }
@@ -1707,6 +1788,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_range_summary(input: z.infer<typeof inputSchemas.get_range_summary>) {
+      const daysError = rangeDaysError(input);
+      if (daysError) return daysError;
       const range = requestedRange(input);
       const [daily, sleep, hrv, stress, bodyBattery, activities] = await Promise.all([
         safeCollection(reader, "daily"),
@@ -1844,8 +1927,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok(await capabilities());
     },
 
-    async get_system_status() {
-      return ok(await systemStatus());
+    async get_system_status(input: z.infer<typeof inputSchemas.get_system_status> = { include_completeness: false }) {
+      return ok(await systemStatus(input));
     },
 
     async get_tool_guide(input: z.infer<typeof inputSchemas.get_tool_guide>) {
@@ -2037,6 +2120,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_archive_range_summary(input: z.infer<typeof inputSchemas.get_archive_range_summary>) {
+      const daysError = rangeDaysError(input);
+      if (daysError) return daysError;
       const range = requestedRange(input);
       const [{ result: activityResult, activities }, metrics] = await Promise.all([
         archiveActivities({ ...input, limit: 1000, include_details: false, include_stream_availability: false }),
@@ -2130,6 +2215,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_health_metrics_by_date_range(input: z.infer<typeof inputSchemas.get_health_metrics_by_date_range>) {
+      const daysError = rangeDaysError(input);
+      if (daysError) return daysError;
       const range = requestedRange(input);
       const metrics = input.metrics ?? ["daily", "sleep", "hrv", "stress", "body_battery"];
       const results = await archiveMetrics(range.startDate, range.endDate, metrics);
