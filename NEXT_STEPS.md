@@ -12,6 +12,7 @@ Recommended next validation steps:
 8. Validate `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.
 9. Run historical backfill with activity details and streams enabled if archive stream coverage is incomplete.
 10. After normalizer schema changes, run `sync.renormalize --since-version 2` against latest and archive raw sleep/HRV files before rebuilding rollups.
+11. If `validation_rejections.json` appears, inspect the listed dataset/date/activity before relying on that rejected row.
 
 Useful commands:
 

@@ -37,6 +37,9 @@ def test_rollup_job_produces_weekly_and_monthly_aggregates(tmp_path):
     assert monthly["activities_by_sport"]["cycling"] == 1
     assert sleep["avg_sleep_seconds"] == 27000
     assert "rollups/weekly/2026-W23.json" in summary["written"]
+    assert weekly["timezone"]
+    assert weekly["timezone_offset_minutes"] is not None
+    assert summary["local_day_bounds"]["start"].startswith("2026-06-01T00:00:00")
 
 
 def test_stale_rollups_detect_schema_bump_and_rebuild(tmp_path):

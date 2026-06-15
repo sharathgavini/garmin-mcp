@@ -16,6 +16,7 @@ from .backfill import bool_arg, parse_iso_date
 from .garmin_sync.normalizers import normalize_activity_detail
 from .garmin_sync.write_json import write_json
 from .session_manager import DEFAULT_SESSION_FILE, login_or_restore
+from .validation import filter_valid_rows
 
 
 STATUS_FILE = "activity_detail_repair_status.json"
@@ -64,7 +65,10 @@ def run_repair(
         try:
             payloads = fetch_activity_payloads(garmin, activity_id)
             detail_raw = detail_payload(payloads)
-            write_json(detail_dir / f"{activity_id}.json", normalize_activity_detail(detail_raw or activity, fallback=activity))
+            detail = filter_valid_rows("activity_details", [normalize_activity_detail(detail_raw or activity, fallback=activity)], output / "validation_rejections.json")
+            if not detail:
+                raise ValueError("activity detail rejected by validation guardrails")
+            write_json(detail_dir / f"{activity_id}.json", detail[0])
             if include_raw:
                 write_json(output / "raw" / "activity_details" / f"{activity_id}.json", payloads)
             repaired += 1
@@ -132,9 +136,13 @@ def load_activities(output: Path, start: date, end: date, *, source: str = "arch
 
 def detail_payload(payloads: dict[str, Any]) -> dict[str, Any]:
     activity = endpoint_payload(payloads.get("activity"))
+    if isinstance(activity, dict) and isinstance(activity.get("payload"), dict):
+        activity = activity["payload"]
     if isinstance(activity, dict):
         return activity
     details = endpoint_payload(payloads.get("activity_details"))
+    if isinstance(details, dict) and isinstance(details.get("payload"), dict):
+        details = details["payload"]
     return details if isinstance(details, dict) else {}
 
 

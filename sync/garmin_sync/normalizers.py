@@ -9,6 +9,8 @@ They omit missing values instead of inventing data.
 from datetime import date
 from typing import Any
 
+from ..time_metadata import normalized_metadata
+
 CURRENT_SCHEMA_VERSION = 2
 
 
@@ -323,6 +325,7 @@ def compact(value: dict[str, Any]) -> dict[str, Any]:
     # Keep normalized JSON small while preserving meaningful false/zero values.
     row = {key: item for key, item in value.items() if item is not None and item != ""}
     row.setdefault("schema_version", CURRENT_SCHEMA_VERSION)
+    row.update({key: item for key, item in normalized_metadata(row.get("date")).items() if key not in row})
     return row
 
 

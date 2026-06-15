@@ -29,6 +29,7 @@ from .gcs_upload import upload_directory_to_gcs
 from .garmin_sync.write_json import write_json
 from .session_manager import DEFAULT_SESSION_FILE, login_or_restore, save_session
 from .retry import retry_call
+from .validation import filter_activity_stream_payload, filter_valid_rows
 
 
 def run_sync(
@@ -179,6 +180,13 @@ def _write_outputs(
     force_refresh: bool = False,
 ) -> None:
     # Top-level files are what latest MCP tools read for fast recent summaries.
+    rejection_path = output / "validation_rejections.json"
+    daily = filter_valid_rows("daily", daily, rejection_path)
+    sleep = filter_valid_rows("sleep", sleep, rejection_path)
+    hrv = filter_valid_rows("hrv", hrv, rejection_path)
+    stress = filter_valid_rows("stress", stress, rejection_path)
+    body_battery = filter_valid_rows("body_battery", body_battery, rejection_path)
+    activities = filter_valid_rows("activities", activities, rejection_path)
     write_json(output / "daily.json", daily)
     write_json(output / "sleep.json", sleep)
     write_json(output / "hrv.json", hrv)
@@ -198,9 +206,11 @@ def _write_outputs(
         if not detail_raw and isinstance(endpoint_payload(payloads.get("activity_details")), dict):
             detail_raw = endpoint_payload(payloads.get("activity_details"))
         if activity_details:
-            write_json(details_dir / f"{activity_id}.json", normalize_activity_detail(detail_raw or activity, fallback=activity))
+            detail = filter_valid_rows("activity_details", [normalize_activity_detail(detail_raw or activity, fallback=activity)], rejection_path)
+            if detail:
+                write_json(details_dir / f"{activity_id}.json", detail[0])
         if activity_streams:
-            write_json(streams_dir / f"{activity_id}.json", normalize_activity_stream(activity_id, payloads))
+            write_json(streams_dir / f"{activity_id}.json", filter_activity_stream_payload(normalize_activity_stream(activity_id, payloads), rejection_path))
         if include_raw:
             write_json(output / "raw" / "activity_details" / f"{activity_id}.json", payloads)
             write_json(output / "raw" / "activity_streams" / f"{activity_id}.json", payloads)

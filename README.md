@@ -120,6 +120,10 @@ Archive range tools support optional `fields` projection so agents can request c
 
 Normalized rows include `schema_version` so future migrations can update only stale records. Garmin API reads use bounded retry/backoff for transient failures; persistent failures still surface as failed sync/backfill/repair status instead of being hidden.
 
+Normalized rows also include canonical `units`, `timezone`, and `timezone_offset_minutes`. Latest sync, backfill, and activity-detail repair reject impossible values such as heart rates above 240 bpm, negative durations, impossible sleep durations, and out-of-range Garmin stress/body battery scores. Rejected rows are written to `validation_rejections.json` so bad payloads are visible without corrupting the MCP dataset.
+
+When a metric exists in both Garmin and a secondary source such as Strava, Garmin is the preferred source of record.
+
 ## Supported Deployment Modes
 
 - Local development with `sample-data/`

@@ -11,6 +11,7 @@ from typing import Any
 
 from .backfill import parse_iso_date, read_json_list
 from .garmin_sync.write_json import write_json
+from .time_metadata import local_day_bounds, normalized_metadata
 
 SCHEMA_VERSION = "archive_rollups_v1"
 DATASETS = ["daily", "sleep", "hrv", "stress", "body_battery", "activities"]
@@ -88,6 +89,8 @@ def build_rollups(output: Path, start_date: str, end_date: str, *, schema_versio
         "schema_version": schema_version,
         "requested_start_date": start_date,
         "requested_end_date": end_date,
+        "local_day_bounds": {"start": local_day_bounds(start_date)["local_day_start"], "end": local_day_bounds(end_date)["local_day_end"]},
+        **normalized_metadata(start_date),
         "written": sorted(written),
     }
     write_json(output / "rollups" / "manifest.json", summary)
@@ -161,7 +164,7 @@ def write_rollup(output: Path, kind: str, key: str, value: dict[str, Any], schem
 
 
 def rollup_payload(value: dict[str, Any], schema_version: str) -> dict[str, Any]:
-    return {"generated_at": datetime.now(timezone.utc).isoformat(), "schema_version": schema_version, "stale": False, **value}
+    return {"generated_at": datetime.now(timezone.utc).isoformat(), "schema_version": schema_version, "stale": False, **normalized_metadata(), **value}
 
 
 def stale_rollups(output: Path, *, schema_version: str = SCHEMA_VERSION) -> list[str]:

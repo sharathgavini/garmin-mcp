@@ -66,6 +66,10 @@ Use `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_trainin
 
 Tool errors use a structured envelope with `error_code`, `message`, and fields such as `param`, `received`, `valid_values`, or `hint`. For stream fields, use canonical names like `speed_mps`, `altitude_m`, and `distance_m`; aliases `speed`, `altitude`, and `distance` are accepted.
 
+Normalized Garmin rows include canonical `units`, `timezone`, and `timezone_offset_minutes`. Treat distances as meters, durations as seconds, speeds as meters per second, HRV as milliseconds, power as watts, and Garmin stress/body battery as 0-100 scores unless a response explicitly says otherwise.
+
+If `validation_rejections.json` exists in latest or archive data, some normalized rows were rejected because values were outside domain guardrails. Do not invent replacements; report the rejection and suggest inspecting raw payloads.
+
 `sync_now` now launches `python -m sync.sync_now`, which is incremental by default. Use `full: true` only when a complete pull is needed, and `force: true` to bypass the cooldown guard.
 
 Every tool response includes `source` or `sources_used`. Do not infer whether data came from latest or archive if the response already says it.
@@ -99,6 +103,8 @@ Use Garmin MCP and show which tool I should use to analyze my latest ride.
 ## Do Not Suggest External Fallbacks
 
 Garmin MCP is intended to be the canonical source of Garmin data. If a stream is missing, tell the user to run sync or backfill with activity streams enabled.
+
+When Garmin and Strava-style duplicate activity data both exist, prefer Garmin metrics for coaching and recovery analysis.
 
 ## Important Paths
 
@@ -162,3 +168,4 @@ python -m sync.renormalize --input /app/data/archive/raw --output /app/data/arch
 - Keep latest and archive behavior separate.
 - Keep stream data full fidelity unless the caller explicitly asks for downsampling.
 - Preserve `schema_version` fields on normalized rows.
+- Preserve canonical unit/timezone metadata and validation guardrails on write paths.

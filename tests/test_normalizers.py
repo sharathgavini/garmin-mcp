@@ -132,3 +132,5 @@ def test_activity_extracts_nested_type():
     assert activity["id"] == "123"
     assert activity["type"] == "running"
     assert activity["date"] == "2026-06-13"
+    assert activity["units"]["distance"] == "meters"
+    assert activity["timezone_offset_minutes"] is not None

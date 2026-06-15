@@ -23,6 +23,9 @@ Current core capabilities:
 - Normalized `schema_version` fields plus version-gated `sync.renormalize --since-version`
 - Retry/backoff around Garmin API reads in sync and backfill paths
 - Resumable activity-detail repair using `activity_detail_repair_status.json`
+- Validation guardrails on normalized latest, archive, detail, and stream writes with `validation_rejections.json`
+- Canonical unit and timezone metadata on normalized rows and archive rollups
+- Garmin-preferred source rules for duplicate external activity metrics
 - Nullable/optional date-range `end_date` schemas for single-day queries
 - Single-date sleep, HRV, and recovery tools
 
