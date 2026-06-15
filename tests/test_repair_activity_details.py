@@ -116,3 +116,22 @@ def test_continues_after_failures_and_writes_status(monkeypatch, tmp_path):
     assert status_file["failed_details"] == 1
     assert (tmp_path / "activity_details" / "a1.json").exists()
     assert not (tmp_path / "activity_details" / "a2.json").exists()
+
+
+def test_repair_resumes_completed_activity_ids(tmp_path):
+    write_archive_activities(tmp_path)
+    (tmp_path / "activity_detail_repair_status.json").write_text(
+        json.dumps({"completed_activity_ids": ["a1"], "status": "running"}),
+        encoding="utf-8",
+    )
+    client = FakeRepairClient()
+
+    repair_activity_details.run_repair(
+        start_date="2026-06-01",
+        end_date="2026-06-03",
+        output=tmp_path,
+        sleep_seconds=0,
+        client=client,
+    )
+
+    assert client.calls == ["a2", "a3"]

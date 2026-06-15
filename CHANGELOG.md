@@ -15,3 +15,4 @@
 - Documented null `end_date` defaulting to `start_date` for single-day range safety.
 - Added `resolution_seconds` stream decimation for lightweight workout overview queries.
 - Added archive partition manifests, weekly/monthly rollups, field projection, and cheap capability metadata from archive indexes.
+- Added normalized `schema_version` fields, version-gated renormalization with stale-rollup marking, Garmin API retry/backoff, and resumable activity-detail repair status.

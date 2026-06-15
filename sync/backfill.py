@@ -26,6 +26,7 @@ from .garmin_sync.normalizers import (
     normalize_stress,
 )
 from .garmin_sync.write_json import write_json
+from .retry import retry_call
 from .session_manager import DEFAULT_SESSION_FILE, login_or_restore
 
 
@@ -381,7 +382,7 @@ def safe_dict(func: Callable[..., Any] | None, *args: Any) -> dict[str, Any]:
     if func is None:
         return {}
     try:
-        value = func(*args)
+        value = retry_call(func, *args)
         return value if isinstance(value, dict) else {}
     except Exception:
         return {}
@@ -392,7 +393,7 @@ def safe_list(func: Callable[..., Any] | None, *args: Any) -> list[Any]:
     if func is None:
         return []
     try:
-        value = func(*args)
+        value = retry_call(func, *args)
         return value if isinstance(value, list) else []
     except Exception:
         return []

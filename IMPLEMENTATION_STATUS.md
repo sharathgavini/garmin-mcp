@@ -20,6 +20,9 @@ Current core capabilities:
 - Incremental `sync_now` wrapper via `python -m sync.sync_now` with cooldown, lookback, sync state, and watermark status
 - Archive partition manifests and weekly/monthly rollups via `python -m sync.archive_maintenance`
 - Field projection on archive range and health tools
+- Normalized `schema_version` fields plus version-gated `sync.renormalize --since-version`
+- Retry/backoff around Garmin API reads in sync and backfill paths
+- Resumable activity-detail repair using `activity_detail_repair_status.json`
 - Nullable/optional date-range `end_date` schemas for single-day queries
 - Single-date sleep, HRV, and recovery tools
 

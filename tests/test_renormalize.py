@@ -1,6 +1,7 @@
 import json
 
 from sync.renormalize import renormalize
+from sync import archive_maintenance
 
 
 # Renormalize tests prove raw payloads can repair normalized sleep/HRV without Garmin calls.
@@ -71,3 +72,25 @@ def test_renormalize_archive_partition_from_raw_files(tmp_path):
     assert counts == {"sleep": 1}
     sleep = json.loads((output / "sleep" / "year=2026" / "month=06" / "sleep.json").read_text())
     assert sleep[0]["total_sleep_seconds"] == 25200
+
+
+def test_renormalize_since_version_updates_stale_rows_and_marks_rollups(tmp_path):
+    raw = tmp_path / "archive" / "raw"
+    output = tmp_path / "archive"
+    partition = raw / "sleep" / "year=2026" / "month=06"
+    partition.mkdir(parents=True)
+    (partition / "sleep.json").write_text(
+        json.dumps([{"date": "2026-06-14", "payload": {"dailySleepDTO": {"sleepTimeSeconds": 25200}}}]),
+        encoding="utf-8",
+    )
+    existing = output / "sleep" / "year=2026" / "month=06"
+    existing.mkdir(parents=True)
+    (existing / "sleep.json").write_text(json.dumps([{"date": "2026-06-14", "schema_version": 1}]), encoding="utf-8")
+    archive_maintenance.build_rollups(output, "2026-06-14", "2026-06-14")
+
+    counts = renormalize(raw, output, ["sleep"], since_version=2)
+
+    sleep = json.loads((existing / "sleep.json").read_text())
+    assert counts == {"sleep": 1}
+    assert sleep[0]["schema_version"] == 2
+    assert archive_maintenance.stale_rollups(output)

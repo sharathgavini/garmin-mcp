@@ -92,6 +92,15 @@ Repair missing archive activity details without rerunning full backfill:
 python -m sync.repair_activity_details --start-date 2026-03-18 --end-date 2026-06-14 --output ./local-data/archive --sleep-seconds 1
 ```
 
+Repair jobs write `activity_detail_repair_status.json` and can resume completed activity IDs after an interruption. Use `--force` only when you intentionally want to refetch existing detail files.
+
+Renormalize raw sleep/HRV after a schema change:
+
+```bash
+python -m sync.renormalize --input ./local-data/latest/raw --output ./local-data/latest --datasets sleep,hrv --since-version 2
+python -m sync.renormalize --input ./local-data/archive/raw --output ./local-data/archive --datasets sleep,hrv --since-version 2
+```
+
 Run incremental sync locally:
 
 ```bash
@@ -108,6 +117,8 @@ python -m sync.archive_maintenance --output ./local-data/archive --start-date 20
 ```
 
 Archive range tools support optional `fields` projection so agents can request compact responses.
+
+Normalized rows include `schema_version` so future migrations can update only stale records. Garmin API reads use bounded retry/backoff for transient failures; persistent failures still surface as failed sync/backfill/repair status instead of being hidden.
 
 ## Supported Deployment Modes
 

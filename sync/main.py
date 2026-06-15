@@ -28,6 +28,7 @@ from .garmin_sync.normalizers import (
 from .gcs_upload import upload_directory_to_gcs
 from .garmin_sync.write_json import write_json
 from .session_manager import DEFAULT_SESSION_FILE, login_or_restore, save_session
+from .retry import retry_call
 
 
 def run_sync(
@@ -417,7 +418,7 @@ def _safe_dict(func: Callable[..., Any] | None, *args: Any) -> dict[str, Any]:
     if func is None:
         return {}
     try:
-        value = func(*args)
+        value = retry_call(func, *args)
         return value if isinstance(value, dict) else {}
     except Exception:
         return {}
@@ -428,7 +429,7 @@ def _safe_list(func: Callable[..., Any] | None, *args: Any) -> list[Any]:
     if func is None:
         return []
     try:
-        value = func(*args)
+        value = retry_call(func, *args)
         return value if isinstance(value, list) else []
     except Exception:
         return []

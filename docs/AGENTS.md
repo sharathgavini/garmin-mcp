@@ -136,6 +136,15 @@ python -m sync.renormalize --input /app/data/latest/raw --output /app/data/lates
 python -m sync.renormalize --input /app/data/archive/raw --output /app/data/archive --datasets sleep,hrv
 ```
 
+After a normalizer schema change, prefer version-gated repair so only stale rows are rewritten and rollups are marked stale:
+
+```bash
+python -m sync.renormalize --input /app/data/latest/raw --output /app/data/latest --datasets sleep,hrv --since-version 2
+python -m sync.renormalize --input /app/data/archive/raw --output /app/data/archive --datasets sleep,hrv --since-version 2
+```
+
+`sync.repair_activity_details` is resumable through `activity_detail_repair_status.json`. If a repair is interrupted, rerun the same command without `--force`; completed activity IDs are skipped.
+
 ## Files To Read First
 
 - `README.md`
@@ -152,3 +161,4 @@ python -m sync.renormalize --input /app/data/archive/raw --output /app/data/arch
 - Do not expose unauthenticated sync.
 - Keep latest and archive behavior separate.
 - Keep stream data full fidelity unless the caller explicitly asks for downsampling.
+- Preserve `schema_version` fields on normalized rows.

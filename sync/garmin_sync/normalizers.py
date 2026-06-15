@@ -9,6 +9,8 @@ They omit missing values instead of inventing data.
 from datetime import date
 from typing import Any
 
+CURRENT_SCHEMA_VERSION = 2
+
 
 def pick(source: dict[str, Any], *keys: str) -> Any:
     # Garmin field names change across endpoints; first present value wins.
@@ -319,7 +321,9 @@ def _normalize_hrv_reading(raw: dict[str, Any]) -> dict[str, Any]:
 
 def compact(value: dict[str, Any]) -> dict[str, Any]:
     # Keep normalized JSON small while preserving meaningful false/zero values.
-    return {key: item for key, item in value.items() if item is not None and item != ""}
+    row = {key: item for key, item in value.items() if item is not None and item != ""}
+    row.setdefault("schema_version", CURRENT_SCHEMA_VERSION)
+    return row
 
 
 def minutes(seconds: Any) -> int | None:

@@ -11,10 +11,13 @@ Recommended next validation steps:
 7. Call `sync_now` twice and verify the second run reports `run_type: cooldown-light` unless `force: true` is used.
 8. Validate `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.
 9. Run historical backfill with activity details and streams enabled if archive stream coverage is incomplete.
+10. After normalizer schema changes, run `sync.renormalize --since-version 2` against latest and archive raw sleep/HRV files before rebuilding rollups.
 
 Useful commands:
 
 ```bash
 docker exec garmin-mcp python -m sync.main --days 30 --output /app/data/latest --include-raw true --activity-details true --activity-streams true
 docker exec garmin-mcp python -m sync.backfill --start-date 2025-10-01 --end-date 2026-06-14 --output /app/data/archive --include-raw true --activity-details true --activity-streams true
+docker exec garmin-mcp python -m sync.renormalize --input /app/data/latest/raw --output /app/data/latest --datasets sleep,hrv --since-version 2
+docker exec garmin-mcp python -m sync.renormalize --input /app/data/archive/raw --output /app/data/archive --datasets sleep,hrv --since-version 2
 ```
