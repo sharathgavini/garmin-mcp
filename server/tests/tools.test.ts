@@ -334,14 +334,28 @@ describe("tool handlers", () => {
     const selected = await handlers.get_activity_streams({
       activity_id: "sample-ride-1",
       source: "auto",
-      fields: ["heart_rate"],
+      fields: ["heart_rate", "speed"],
       downsample: true,
       max_points: 3
     });
     const selectedStream = selected.structuredContent.stream as { samples: Record<string, unknown>[]; fields: string[]; downsampled: boolean };
     assert.equal(selectedStream.samples.length, 3);
     assert.equal(selectedStream.downsampled, true);
-    assert.deepEqual(Object.keys(selectedStream.samples[0]).sort(), ["heart_rate", "offset_seconds"]);
+    assert.deepEqual(Object.keys(selectedStream.samples[0]).sort(), ["heart_rate", "offset_seconds", "speed_mps"]);
+    assert.deepEqual(selected.structuredContent.field_aliases_used, { speed: "speed_mps" });
+  });
+
+  it("returns structured errors for invalid stream fields", async () => {
+    const result = await handlers.get_activity_streams({
+      activity_id: "sample-ride-1",
+      source: "auto",
+      fields: ["not_a_stream"],
+      downsample: false
+    });
+    assert.equal(result.structuredContent.error, true);
+    assert.equal(result.structuredContent.error_code, "INVALID_FIELD_NAME");
+    assert.equal(result.structuredContent.param, "fields");
+    assert.ok((result.structuredContent.valid_values as string[]).includes("speed_mps"));
   });
 
   it("returns the explicit missing stream message", async () => {
@@ -521,16 +535,30 @@ describe("tool handlers", () => {
     const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
     const result = await archiveHandlers.audit_data_quality({
       start_date: "2026-05-01",
-      end_date: "2026-05-03",
+      end_date: "2026-05-04",
       source: "archive"
     });
     assert.equal(result.structuredContent.status, "warning");
     assert.equal(result.structuredContent.source, "archive");
     assert.equal(result.structuredContent.resolved_start_date, "2026-05-01");
     const summary = result.structuredContent.summary as Record<string, unknown>;
-    assert.equal(summary.days_requested, 3);
+    assert.equal(summary.days_requested, 4);
     assert.equal(summary.sleep_days, 1);
-    assert.ok((result.structuredContent.issues as Array<Record<string, unknown>>).some((issue) => issue.dataset === "sleep"));
+    const issues = result.structuredContent.issues as Array<Record<string, unknown>>;
+    assert.ok(issues.some((issue) => issue.dataset === "sleep"));
+    const detailsIssue = issues.find((issue) => issue.dataset === "activity_details");
+    assert.ok(detailsIssue);
+    assert.match(String(detailsIssue.hint), /sync\.repair_activity_details/);
+  });
+
+  it("returns activity detail repair status", async () => {
+    const { latest } = await createArchiveFixture();
+    const statusPath = path.join(path.dirname(latest), "archive", "activity_detail_repair_status.json");
+    await writeFile(statusPath, JSON.stringify({ status: "success", repaired_details: 4, failed_details: 0 }));
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.repair_activity_details_status();
+    assert.equal(result.structuredContent.status, "success");
+    assert.equal(result.structuredContent.repaired_details, 4);
   });
 
   it("returns metric inventory without inventing fields", async () => {
@@ -597,6 +625,19 @@ describe("tool handlers", () => {
     assert.equal(metrics.daily.records.length, 3);
     assert.equal(metrics.hrv.records.length, 1);
     assert.ok(metrics.hrv.coverage.warnings.length > 0);
+  });
+
+  it("returns structured no-data errors for empty ranges", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.get_health_metrics_by_date_range({
+      start_date: "2025-01-01",
+      end_date: "2025-01-02",
+      metrics: ["sleep"]
+    });
+    assert.equal(result.structuredContent.error, true);
+    assert.equal(result.structuredContent.error_code, "NO_DATA_FOR_RANGE");
+    assert.equal(result.structuredContent.resolved_start_date, "2025-01-01");
   });
 
   it("gets single-day health metrics when end_date is null", async () => {

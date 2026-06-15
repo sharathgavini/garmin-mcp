@@ -15,6 +15,7 @@ Use latest tools for current data:
 - `get_training_load_dashboard`
 - `detect_training_anomalies`
 - `get_schema_version`
+- `repair_activity_details_status`
 - `get_sync_completeness`
 - `get_dataset_status`
 - `get_today_summary`
@@ -54,7 +55,15 @@ Call `get_tool_guide` when tool choice is unclear.
 
 Call `audit_data_quality` before long-range coaching or if a result looks incomplete.
 
+If `audit_data_quality` reports missing `activity_details`, recommend:
+
+```bash
+docker exec garmin-mcp python -m sync.repair_activity_details --start-date 2026-03-18 --end-date 2026-06-14 --output /app/data/archive --sleep-seconds 1
+```
+
 Use `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies` for coaching-ready summaries. These tools are conservative and report estimates or missing data instead of pretending to be Garmin official scores.
+
+Tool errors use a structured envelope with `error_code`, `message`, and fields such as `param`, `received`, `valid_values`, or `hint`. For stream fields, use canonical names like `speed_mps`, `altitude_m`, and `distance_m`; aliases `speed`, `altitude`, and `distance` are accepted.
 
 Every tool response includes `source` or `sources_used`. Do not infer whether data came from latest or archive if the response already says it.
 

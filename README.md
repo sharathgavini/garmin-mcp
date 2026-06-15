@@ -85,6 +85,12 @@ Run historical backfill locally:
 python -m sync.backfill --start-date 2025-10-01 --end-date 2026-06-14 --output ./local-data/archive --include-raw true --activity-details true --activity-streams true
 ```
 
+Repair missing archive activity details without rerunning full backfill:
+
+```bash
+python -m sync.repair_activity_details --start-date 2026-03-18 --end-date 2026-06-14 --output ./local-data/archive --sleep-seconds 1
+```
+
 ## Supported Deployment Modes
 
 - Local development with `sample-data/`
@@ -98,3 +104,7 @@ python -m sync.backfill --start-date 2025-10-01 --end-date 2026-06-14 --output .
 - Keep `/app/secrets` persistent and private.
 - The MCP server reads prepared JSON; Garmin login happens in the sync process.
 - `sync_now` is exposed only as an authenticated MCP tool, not as an unauthenticated HTTP endpoint.
+
+## Tool Error Envelope
+
+MCP tools return structured errors with `error_code`, `message`, and helpful fields such as `param`, `received`, `valid_values`, or `hint`. Common codes include `INVALID_FIELD_NAME` and `NO_DATA_FOR_RANGE`.

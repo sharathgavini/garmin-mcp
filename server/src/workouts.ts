@@ -15,7 +15,16 @@ export interface WorkoutFilter {
 }
 
 const preservedFields = new Set(["timestamp", "offset_seconds"]);
-const expectedStreamFields = ["heart_rate", "cadence", "speed_mps", "power_watts", "altitude_m", "distance_m", "position_lat", "position_long", "temperature"];
+export const expectedStreamFields = ["heart_rate", "cadence", "speed_mps", "power_watts", "altitude_m", "distance_m", "position_lat", "position_long", "latitude", "longitude", "temperature"];
+export const streamFieldAliases: Record<string, string> = {
+  speed: "speed_mps",
+  altitude: "altitude_m",
+  elevation: "altitude_m",
+  distance: "distance_m",
+  lat: "latitude",
+  lon: "longitude",
+  lng: "longitude"
+};
 
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -172,6 +181,29 @@ export function selectStreamFields(stream: JsonObject, fields?: string[]): JsonO
   return { ...stream, fields: available, samples };
 }
 
+export function normalizeRequestedStreamFields(fields?: string[]): { fields?: string[]; aliases_used: Record<string, string>; invalid_fields: string[]; valid_values: string[] } {
+  const validValues = [...new Set([...expectedStreamFields, ...Object.keys(streamFieldAliases), ...preservedFields])].sort();
+  if (!fields || fields.length === 0) {
+    return { fields, aliases_used: {}, invalid_fields: [], valid_values: validValues };
+  }
+  const canonical = new Set(expectedStreamFields);
+  const normalized: string[] = [];
+  const aliasesUsed: Record<string, string> = {};
+  const invalid: string[] = [];
+  for (const field of fields) {
+    const mapped = streamFieldAliases[field] ?? field;
+    if (mapped !== field) {
+      aliasesUsed[field] = mapped;
+    }
+    if (!canonical.has(mapped) && !preservedFields.has(mapped)) {
+      invalid.push(field);
+      continue;
+    }
+    normalized.push(mapped);
+  }
+  return { fields: [...new Set(normalized)], aliases_used: aliasesUsed, invalid_fields: invalid, valid_values: validValues };
+}
+
 // Downsampling is opt-in; full streams are returned by default.
 export function downsampleStream(stream: JsonObject, maxPoints?: number | null): JsonObject {
   if (!maxPoints || maxPoints < 1 || !Array.isArray(stream.samples) || stream.samples.length <= maxPoints) {
@@ -184,7 +216,11 @@ export function downsampleStream(stream: JsonObject, maxPoints?: number | null):
 }
 
 export function shapeStream(stream: JsonObject, options: { fields?: string[]; downsample?: boolean; max_points?: number | null }): JsonObject {
-  const filtered = selectStreamFields(stream, options.fields);
+  const normalized = normalizeRequestedStreamFields(options.fields);
+  const filtered = selectStreamFields(stream, normalized.fields);
+  if (Object.keys(normalized.aliases_used).length > 0) {
+    filtered.field_aliases_used = normalized.aliases_used;
+  }
   return options.downsample ? downsampleStream(filtered, options.max_points ?? null) : filtered;
 }
 

@@ -27,6 +27,18 @@ Sport categories are normalized to cycling, running, walking, badminton, strengt
 
 If stream output is empty or partial, the MCP response includes extraction status, checked payloads when available, missing fields, and a recommendation to run `sync.inspect_activity`.
 
+Canonical stream field names include `heart_rate`, `cadence`, `speed_mps`, `power_watts`, `altitude_m`, `distance_m`, `latitude`, `longitude`, and `temperature`. Accepted aliases include `speed` -> `speed_mps`, `altitude`/`elevation` -> `altitude_m`, and `distance` -> `distance_m`. Invalid field names return `INVALID_FIELD_NAME` with valid values.
+
+If activity details are missing but activity streams exist, run targeted repair:
+
+```bash
+docker exec garmin-mcp python -m sync.repair_activity_details \
+  --start-date 2026-03-18 \
+  --end-date 2026-06-14 \
+  --output /app/data/archive \
+  --sleep-seconds 1
+```
+
 For coaching summaries, use `get_training_load_dashboard` before writing advice. It reports sport mix, weekly totals, acute/chronic duration estimates, ramp rate estimate, and missing-data warnings. Use `detect_training_anomalies` for conservative flags such as load spikes, too many consecutive training days, poor recovery before hard efforts, or missing data.
 
 Example prompts:

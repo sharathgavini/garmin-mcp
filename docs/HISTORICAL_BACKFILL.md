@@ -31,6 +31,22 @@ docker exec garmin-mcp python -m sync.backfill \
 
 Backfill writes `backfill_checkpoint.json` after each chunk. Existing activity details and stream files are skipped unless `--force` is passed, which keeps reruns safe for long Garmin histories.
 
+## Repair Missing Activity Details
+
+If `audit_data_quality` reports healthy streams but many missing activity detail files, repair only details instead of rerunning full backfill:
+
+```bash
+docker exec garmin-mcp python -m sync.repair_activity_details \
+  --start-date 2026-03-18 \
+  --end-date 2026-06-14 \
+  --output /app/data/archive \
+  --sleep-seconds 1
+```
+
+The repair command reads archive activity partitions, skips existing detail files unless `--force` is passed, writes normalized detail files under `/app/data/archive/activity_details`, writes raw payloads under `/app/data/archive/raw/activity_details` by default, and records `/app/data/archive/activity_detail_repair_status.json`.
+
+Check the latest repair result through MCP with `repair_activity_details_status` or in `get_system_status`.
+
 Raw payloads are written under the archive itself when `--include-raw true`:
 
 ```text

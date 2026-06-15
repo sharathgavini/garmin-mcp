@@ -68,6 +68,12 @@ Inputs:
 
 Reports missing days, stale data, date-only sleep/HRV normalization, missing activity details, missing/empty streams, and sync status issues with `ok`, `warning`, or `critical` severity.
 
+When activity details are missing, the issue includes a `hint` with the targeted `sync.repair_activity_details` command.
+
+### `repair_activity_details_status`
+
+Returns the latest `/app/data/archive/activity_detail_repair_status.json` contents, including repaired and failed detail counts.
+
 ### `get_metric_inventory`
 
 Shows exactly which fields exist in the local dataset.
@@ -176,6 +182,8 @@ Inputs:
 - `fields` optional
 - `downsample` optional
 - `max_points` optional
+
+Canonical stream fields include `heart_rate`, `cadence`, `speed_mps`, `power_watts`, `altitude_m`, `distance_m`, `latitude`, `longitude`, and `temperature`. Aliases `speed`, `altitude`, `elevation`, and `distance` are accepted and mapped to canonical names. Unknown fields return `INVALID_FIELD_NAME`.
 
 ## Workout Tools
 
@@ -426,6 +434,22 @@ Stream completeness query:
 ## Source and Completeness
 
 `latest` is the fast recent dataset used by daily sync. `archive` is the partitioned historical dataset used for long-range backfill. Tools include `source` or `sources_used` so clients do not need to infer where data came from.
+
+## Error Envelope
+
+Structured tool errors include:
+
+- `error: true`
+- `error_code`
+- `message`
+- `param` when a parameter caused the error
+- `received`
+- `valid_values` or `hint`
+
+Common `error_code` values:
+
+- `INVALID_FIELD_NAME`
+- `NO_DATA_FOR_RANGE`
 
 Stream tools include:
 

@@ -8,7 +8,7 @@ import { daysAgoIso, filterByDateRange, inclusiveDays, isIsoDate, latestByDate, 
 import { classifySport } from "./sports.js";
 import { syncNow, runningSyncState, type SyncNowOptions } from "./syncNow.js";
 import type { GarminDataReader, JsonObject, Manifest } from "./types.js";
-import { allActivities, activityId, analyze, latestWorkout, shapeStream, streamCompleteness, summarizeWorkout, type StreamSource } from "./workouts.js";
+import { allActivities, activityId, analyze, expectedStreamFields, latestWorkout, normalizeRequestedStreamFields, shapeStream, streamCompleteness, streamFieldAliases, summarizeWorkout, type StreamSource } from "./workouts.js";
 
 const isoDateSchema = z.string().refine(isIsoDate, "Use YYYY-MM-DD.");
 // Claude and MCP Inspector may send null for single-day range end dates; the
@@ -87,6 +87,7 @@ export const inputShapes = {
     focus: z.enum(["general", "recovery", "injury", "cycling", "running", "badminton", "strength"]).default("general")
   },
   get_schema_version: {},
+  repair_activity_details_status: {},
   get_latest_activity: {},
   sync_now: {
     days: z.number().int().min(1).max(30).default(7),
@@ -220,6 +221,7 @@ export const inputSchemas = {
   get_training_load_dashboard: presetRangeSchema(inputShapes.get_training_load_dashboard),
   detect_training_anomalies: presetRangeSchema(inputShapes.detect_training_anomalies),
   get_schema_version: z.object(inputShapes.get_schema_version),
+  repair_activity_details_status: z.object(inputShapes.repair_activity_details_status),
   get_latest_activity: z.object(inputShapes.get_latest_activity),
   sync_now: z.object(inputShapes.sync_now),
   get_sync_completeness: z.object(inputShapes.get_sync_completeness),
@@ -259,6 +261,10 @@ function ok(data: JsonObject): { content: Array<{ type: "text"; text: string }>;
     content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }],
     structuredContent
   };
+}
+
+function toolError(error_code: string, message: string, extra: JsonObject = {}) {
+  return ok({ error: true, error_code, message, ...extra });
 }
 
 type DateRangePreset = z.infer<typeof dateRangePresetSchema>;
@@ -856,6 +862,15 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
   // Shared stream response for latest workout and latest ride stream tools.
   async function latestStreamResponse(input: z.infer<typeof inputSchemas.get_latest_workout_streams>, filter = {}) {
+    const fieldCheck = normalizeRequestedStreamFields(input.fields);
+    if (fieldCheck.invalid_fields.length > 0) {
+      return toolError("INVALID_FIELD_NAME", "One or more requested stream fields are not valid.", {
+        param: "fields",
+        received: fieldCheck.invalid_fields,
+        valid_values: fieldCheck.valid_values,
+        hint: "Use canonical stream fields or accepted aliases such as speed, altitude, and distance."
+      });
+    }
     const activity = latestWorkout(await allActivities(reader), { ...input, ...filter });
     const id = activity ? activityId(activity) : null;
     const stream = id ? await streamFor(id) : null;
@@ -876,7 +891,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       activity_summary: summarizeWorkout(activity, stream),
       extraction: streamExtractionNotice(stream),
       ...completeness,
-      stream: shapeStream(stream, input)
+      field_aliases_used: fieldCheck.aliases_used,
+      stream: shapeStream(stream, { ...input, fields: fieldCheck.fields })
     });
   }
 
@@ -1063,6 +1079,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       raw_data_available: Boolean(manifest.files?.raw) || false,
       activity_streams: streams.length > 0,
       stream_fields: streamFields,
+      stream_field_aliases: streamFieldAliases,
       supported_stream_fields: streamFields,
       supported_activity_types: uniqueStrings(activities.map((activity) => activity.type ?? activity.activity_type ?? activity.activityType)),
       sports: Object.keys(activitiesBySport).sort(),
@@ -1098,6 +1115,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       warnings.push("latest data appears stale by more than one day.");
     }
     const archiveBackfillStatus = await reader.readJson<JsonObject>("../archive/backfill_checkpoint.json").catch(() => null);
+    const repairStatus = await readActivityDetailRepairStatus();
     if (archiveBackfillStatus?.status === "running") {
       warnings.push("archive backfill is currently running.");
     }
@@ -1106,6 +1124,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       server_status: "ok",
       latest_sync: syncStatus,
       archive_backfill_status: archiveBackfillStatus,
+      activity_detail_repair_status: repairStatus,
       history_coverage: history ?? null,
       available_datasets: {
         health: caps.health_datasets,
@@ -1119,6 +1138,18 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       warnings: uniqueStrings(warnings),
       version: process.env.npm_package_version ?? null
     };
+  }
+
+  async function readActivityDetailRepairStatus(): Promise<JsonObject> {
+    try {
+      return await reader.readJson<JsonObject>("../archive/activity_detail_repair_status.json");
+    } catch {
+      try {
+        return await reader.readJson<JsonObject>("activity_detail_repair_status.json");
+      } catch {
+        return { status: "unknown", missing: true };
+      }
+    }
   }
 
   function toolGuide(intent?: string): JsonObject {
@@ -1148,6 +1179,10 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         "Use activity stream tools for deep workout analysis.",
         "Do not fall back to Strava or other services unless the user explicitly asks."
       ],
+      stream_fields: {
+        canonical: expectedStreamFields,
+        aliases: streamFieldAliases
+      },
       common_intents: commonIntents,
       recommended: normalized && normalized in commonIntents ? commonIntents[normalized] : null
     };
@@ -1157,7 +1192,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     const range = requestedRange(input, "last_30_days");
     const datasets = input.datasets ?? ["daily", "sleep", "hrv", "stress", "body_battery", "activities", "activity_details", "activity_streams"];
     const source = input.source ?? "auto";
-    const issues: Array<{ severity: string; dataset: string; message: string; dates?: string[]; count?: number }> = [];
+    const issues: Array<{ severity: string; dataset: string; message: string; dates?: string[]; count?: number; hint?: string }> = [];
     const metrics = await metricBundle(range, source);
     const activities = await activitiesForRange(range, source);
     for (const dataset of healthDatasets) {
@@ -1175,7 +1210,13 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     }
     const counts = await streamAndDetailCounts(activities.rows, source === "latest" || source === "archive" ? source : "auto");
     if (datasets.includes("activity_details" as never) && counts.activity_details < counts.activities_checked) {
-      issues.push({ severity: "warning", dataset: "activity_details", message: `${counts.activities_checked - counts.activity_details} checked activity detail file(s) are missing.`, count: counts.activities_checked - counts.activity_details });
+      issues.push({
+        severity: "warning",
+        dataset: "activity_details",
+        message: `${counts.activities_checked - counts.activity_details} checked activity detail file(s) are missing.`,
+        count: counts.activities_checked - counts.activity_details,
+        hint: `Run: docker exec garmin-mcp python -m sync.repair_activity_details --start-date ${range.startDate} --end-date ${range.endDate} --output /app/data/archive --sleep-seconds 1`
+      });
     }
     if (datasets.includes("activity_streams" as never)) {
       if (counts.activity_streams < counts.activities_checked) {
@@ -1511,6 +1552,24 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
 
       const { startDate, endDate } = range;
       const dailyRange = filterByDateRange(daily, startDate, endDate);
+      const rangeRows = [
+        ...dailyRange,
+        ...filterByDateRange(sleep, startDate, endDate),
+        ...filterByDateRange(hrv, startDate, endDate),
+        ...filterByDateRange(stress, startDate, endDate),
+        ...filterByDateRange(bodyBattery, startDate, endDate),
+        ...filterByDateRange(activities, startDate, endDate)
+      ];
+      if (rangeRows.length === 0) {
+        return toolError("NO_DATA_FOR_RANGE", "No Garmin latest data was found for the requested date range.", {
+          requested_start_date: range.requested_start_date,
+          requested_end_date: range.requested_end_date,
+          date_range_preset: range.date_range_preset,
+          resolved_start_date: range.resolved_start_date,
+          resolved_end_date: range.resolved_end_date,
+          defaults_applied: range.defaults_applied
+        });
+      }
       const readiness = dailyRange
         .map((row) => ({
           date: row.date,
@@ -1523,14 +1582,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok({
         requested_start_date: range.requested_start_date,
         requested_end_date: range.requested_end_date,
-        coverage: dateCoverage(startDate, endDate, [
-          ...dailyRange,
-          ...filterByDateRange(sleep, startDate, endDate),
-          ...filterByDateRange(hrv, startDate, endDate),
-          ...filterByDateRange(stress, startDate, endDate),
-          ...filterByDateRange(bodyBattery, startDate, endDate),
-          ...filterByDateRange(activities, startDate, endDate)
-        ]),
+        coverage: dateCoverage(startDate, endDate, rangeRows),
         defaults_applied: range.defaults_applied,
         start_date: startDate,
         end_date: endDate,
@@ -1654,6 +1706,10 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok(await schemaVersion());
     },
 
+    async repair_activity_details_status() {
+      return ok(await readActivityDetailRepairStatus());
+    },
+
     async get_latest_activity() {
       const status = await readSyncStatus();
       const latestActivityId = status.latest_activity_id;
@@ -1728,6 +1784,15 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     },
 
     async get_activity_streams(input: z.infer<typeof inputSchemas.get_activity_streams>) {
+      const fieldCheck = normalizeRequestedStreamFields(input.fields);
+      if (fieldCheck.invalid_fields.length > 0) {
+        return toolError("INVALID_FIELD_NAME", "One or more requested stream fields are not valid.", {
+          param: "fields",
+          received: fieldCheck.invalid_fields,
+          valid_values: fieldCheck.valid_values,
+          hint: "Use canonical stream fields or accepted aliases such as speed, altitude, and distance."
+        });
+      }
       const stream = await streamFor(input.activity_id, input.source);
       const completeness = streamCompleteness(stream);
       if (!stream) {
@@ -1745,7 +1810,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         ...(input.source === "auto" ? { sources_used: ["latest", "archive"] } : { source: input.source }),
         extraction: streamExtractionNotice(stream),
         ...completeness,
-        stream: shapeStream(stream, input)
+        field_aliases_used: fieldCheck.aliases_used,
+        stream: shapeStream(stream, { ...input, fields: fieldCheck.fields })
       });
     },
 
@@ -1814,6 +1880,12 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
         stress: metrics.stress.coverage,
         body_battery: metrics.body_battery.coverage
       };
+      const allRows = [...activities, ...Object.values(metrics).flatMap((result) => result.rows)];
+      if (allRows.length === 0) {
+        return toolError("NO_DATA_FOR_RANGE", "No Garmin archive data was found for the requested date range.", {
+          ...rangeMetadata(range, allRows)
+        });
+      }
       return ok({
         ...rangeMetadata(range, metrics.daily.rows),
         date_range: { start: range.startDate, end: range.endDate },
@@ -1890,6 +1962,11 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       const metrics = input.metrics ?? ["daily", "sleep", "hrv", "stress", "body_battery"];
       const results = await archiveMetrics(range.startDate, range.endDate, metrics);
       const rows = Object.values(results).flatMap((result) => result.rows);
+      if (rows.length === 0) {
+        return toolError("NO_DATA_FOR_RANGE", "No Garmin health metrics were found for the requested date range.", {
+          ...rangeMetadata(range, rows)
+        });
+      }
       return ok({
         ...rangeMetadata(range, rows),
         date_range: { start: range.startDate, end: range.endDate },

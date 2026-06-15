@@ -9,3 +9,5 @@
 - Documented the recommended `get_data_capabilities` then `get_system_status` agent workflow.
 - Added `get_tool_guide`, `audit_data_quality`, `get_metric_inventory`, `get_recovery_dashboard`, `get_training_load_dashboard`, `detect_training_anomalies`, and `get_schema_version`.
 - Added natural date-range presets for range-oriented MCP tools.
+- Added targeted `sync.repair_activity_details` CLI and MCP repair status exposure.
+- Added structured `INVALID_FIELD_NAME` and `NO_DATA_FOR_RANGE` responses plus stream field aliases.

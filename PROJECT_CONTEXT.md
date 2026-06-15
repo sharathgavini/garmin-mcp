@@ -13,3 +13,5 @@ The MCP server reads normalized JSON. It does not call Garmin for ordinary read 
 Agent clients should start with `get_tool_guide` when routing is unclear, call `get_data_capabilities`, then call `get_system_status` and `audit_data_quality` when data freshness or completeness matters.
 
 Range tools support natural presets such as `last_14_days`, `last_30_days`, and `last_90_days`. Coaching-ready summaries are exposed through `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.
+
+If archive activity streams are healthy but activity details are missing, use `python -m sync.repair_activity_details` instead of rerunning full historical backfill.

@@ -149,6 +149,22 @@ docker exec garmin-mcp python -m sync.main \
 
 The manual command works because the container sets `GARMIN_SESSION_FILE=/app/secrets/.garmin-session.enc`.
 
+Repair missing archive activity details without rerunning full backfill:
+
+```bash
+docker exec garmin-mcp python -m sync.repair_activity_details \
+  --start-date 2026-03-18 \
+  --end-date 2026-06-14 \
+  --output /app/data/archive \
+  --sleep-seconds 1
+```
+
+Check repair status:
+
+```text
+Use Garmin MCP and call repair_activity_details_status.
+```
+
 View scheduled sync logs:
 
 ```bash

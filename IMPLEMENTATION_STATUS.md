@@ -15,6 +15,8 @@ Current core capabilities:
 - Recovery and training-load dashboards
 - Conservative anomaly detection
 - Natural date presets on range-oriented tools
+- Targeted archive activity-detail repair via `python -m sync.repair_activity_details`
+- Structured stream field errors and aliases for `get_activity_streams`
 - Nullable/optional date-range `end_date` schemas for single-day queries
 - Single-date sleep, HRV, and recovery tools
 
