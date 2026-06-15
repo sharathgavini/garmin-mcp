@@ -30,7 +30,7 @@ export interface GarminDataReader {
   readCollection(name: string): Promise<JsonObject[]>;
   readArchiveCollection(name: string, startDate: string, endDate: string): Promise<ArchiveCollectionResult>;
   readJson<T>(path: string): Promise<T>;
-  readActivityDetail(activityId: string): Promise<JsonObject | null>;
+  readActivityDetail(activityId: string, source?: "latest" | "archive" | "auto"): Promise<JsonObject | null>;
   readActivityStream(activityId: string, source?: "latest" | "archive" | "auto"): Promise<JsonObject | null>;
   readArchiveActivities?(): Promise<JsonObject[]>;
 }

@@ -149,6 +149,37 @@ async function createArchiveFixture() {
   return { root, latest };
 }
 
+async function createArchiveDetailFixture(totalActivities: number, latestActivities: number, missingDetailIds: string[] = []) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "garmin-detail-audit-"));
+  const latest = path.join(root, "latest");
+  const archive = path.join(root, "archive");
+  await mkdir(latest, { recursive: true });
+  await mkdir(path.join(archive, "activities", "year=2026", "month=06"), { recursive: true });
+  await mkdir(path.join(archive, "activity_details"), { recursive: true });
+  await mkdir(path.join(archive, "activity_streams"), { recursive: true });
+
+  const activities = Array.from({ length: totalActivities }, (_, index) => {
+    const day = String((index % 30) + 1).padStart(2, "0");
+    return { id: `archive-${index + 1}`, type: "road biking", date: `2026-06-${day}`, duration_seconds: 1200 + index };
+  });
+  const missing = new Set(missingDetailIds);
+  await writeFile(path.join(latest, "manifest.json"), JSON.stringify({ date_range: { start: "2026-06-01", end: "2026-06-30" } }));
+  await writeFile(path.join(latest, "activities.json"), JSON.stringify(activities.slice(0, latestActivities)));
+  await writeFile(path.join(latest, "daily.json"), "[]");
+  await writeFile(path.join(latest, "sleep.json"), "[]");
+  await writeFile(path.join(latest, "hrv.json"), "[]");
+  await writeFile(path.join(latest, "stress.json"), "[]");
+  await writeFile(path.join(latest, "body_battery.json"), "[]");
+  await writeFile(path.join(archive, "activities", "year=2026", "month=06", "activities.json"), JSON.stringify(activities));
+  for (const activity of activities) {
+    if (!missing.has(String(activity.id))) {
+      await writeFile(path.join(archive, "activity_details", `${activity.id}.json`), JSON.stringify({ id: activity.id, date: activity.date }));
+    }
+    await writeFile(path.join(archive, "activity_streams", `${activity.id}.json`), JSON.stringify({ activity_id: activity.id, fields: ["heart_rate"], samples: [{ offset_seconds: 0, heart_rate: 120 }] }));
+  }
+  return { latest };
+}
+
 describe("date filtering", () => {
   it("filters inclusive date ranges", () => {
     const rows = [{ date: "2026-06-11" }, { date: "2026-06-12" }, { date: "2026-06-13" }];
@@ -716,6 +747,60 @@ describe("tool handlers", () => {
     const detailsIssue = issues.find((issue) => issue.dataset === "activity_details");
     assert.ok(detailsIssue);
     assert.match(String(detailsIssue.hint), /sync\.repair_activity_details/);
+  });
+
+  it("does not report missing archive activity details when detail files exist on disk", async () => {
+    const { latest } = await createArchiveDetailFixture(12, 3);
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.audit_data_quality({
+      start_date: "2026-06-01",
+      end_date: "2026-06-30",
+      source: "archive",
+      datasets: ["activity_details", "activity_streams"]
+    });
+    const issues = result.structuredContent.issues as Array<Record<string, unknown>>;
+    const summary = result.structuredContent.summary as Record<string, unknown>;
+
+    assert.equal(summary.activities, 12);
+    assert.equal(summary.activity_details, 12);
+    assert.equal(issues.some((issue) => issue.dataset === "activity_details"), false);
+    assert.doesNotMatch(JSON.stringify(result.structuredContent), /sync\.repair_activity_details/);
+  });
+
+  it("reports exactly the missing archive activity detail files", async () => {
+    const { latest } = await createArchiveDetailFixture(8, 2, ["archive-3", "archive-7"]);
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.audit_data_quality({
+      start_date: "2026-06-01",
+      end_date: "2026-06-30",
+      source: "archive",
+      datasets: ["activity_details", "activity_streams"]
+    });
+    const issues = result.structuredContent.issues as Array<Record<string, unknown>>;
+    const summary = result.structuredContent.summary as Record<string, unknown>;
+    const detailsIssue = issues.find((issue) => issue.dataset === "activity_details");
+
+    assert.equal(summary.activities, 8);
+    assert.equal(summary.activity_details, 6);
+    assert.equal(detailsIssue?.count, 2);
+    assert.match(String(detailsIssue?.hint), /sync\.repair_activity_details/);
+  });
+
+  it("regresses audit detail counts against archive files instead of latest sync count", async () => {
+    const { latest } = await createArchiveDetailFixture(146, 10);
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const result = await archiveHandlers.audit_data_quality({
+      start_date: "2026-06-01",
+      end_date: "2026-06-30",
+      source: "archive",
+      datasets: ["activity_details", "activity_streams"]
+    });
+    const issues = result.structuredContent.issues as Array<Record<string, unknown>>;
+    const summary = result.structuredContent.summary as Record<string, unknown>;
+
+    assert.equal(summary.activities, 146);
+    assert.equal(summary.activity_details, 146);
+    assert.equal(issues.some((issue) => issue.dataset === "activity_details"), false);
   });
 
   it("returns activity detail repair status", async () => {

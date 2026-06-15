@@ -1078,7 +1078,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
     const checked = activities.slice(0, 200);
     const details = await Promise.all(checked.map(async (activity) => {
       const id = activityId(activity);
-      return id ? reader.readActivityDetail(id).catch(() => null) : null;
+      return id ? reader.readActivityDetail(id, source).catch(() => null) : null;
     }));
     const streams = await Promise.all(checked.map(async (activity) => {
       const id = activityId(activity);

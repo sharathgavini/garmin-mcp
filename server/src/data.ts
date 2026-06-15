@@ -95,15 +95,28 @@ export class LocalDataReader implements GarminDataReader {
     return JSON.parse(raw) as T;
   }
 
-  async readActivityDetail(activityId: string): Promise<JsonObject | null> {
-    try {
-      return await this.readJson<JsonObject>(path.join("activity_details", `${activityId}.json`));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return null;
+  async readActivityDetail(activityId: string, source: "latest" | "archive" | "auto" = "auto"): Promise<JsonObject | null> {
+    const candidates =
+      source === "latest"
+        ? [path.join(this.baseDir, "activity_details", `${activityId}.json`)]
+        : source === "archive"
+          ? [path.join(this.archiveDir(), "activity_details", `${activityId}.json`)]
+          : [
+              path.join(this.baseDir, "activity_details", `${activityId}.json`),
+              path.join(this.archiveDir(), "activity_details", `${activityId}.json`)
+            ];
+
+    for (const fullPath of candidates) {
+      try {
+        const raw = await fs.readFile(fullPath, "utf8");
+        return JSON.parse(raw) as JsonObject;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw error;
+        }
       }
-      throw error;
     }
+    return null;
   }
 
   async readActivityStream(activityId: string, source: "latest" | "archive" | "auto" = "auto"): Promise<JsonObject | null> {
@@ -241,7 +254,10 @@ export class GcsDataReader implements GarminDataReader {
     return JSON.parse(buffer.toString("utf8")) as T;
   }
 
-  async readActivityDetail(activityId: string): Promise<JsonObject | null> {
+  async readActivityDetail(activityId: string, source: "latest" | "archive" | "auto" = "auto"): Promise<JsonObject | null> {
+    if (source === "archive") {
+      return null;
+    }
     try {
       return await this.readJson<JsonObject>(`${this.prefix}/activity_details/${activityId}.json`);
     } catch (error) {

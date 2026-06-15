@@ -20,3 +20,4 @@
 - Added manifest-backed per-dataset capability discovery plus incremental `sync_now` manifest verification and checkpoint resume ties.
 - Added opt-in `days` range fallback, pedaling-only stream filtering, and manifest-derived completeness on `get_system_status`.
 - Added regression coverage for Part 3 convenience behavior across days-aware range tools, pedaling-only stream thresholds, and manifest-derived completeness.
+- Fixed `audit_data_quality` archive activity-detail checks so they read archive detail files directly instead of counting only latest synced details.
