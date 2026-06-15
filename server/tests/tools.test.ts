@@ -453,6 +453,28 @@ describe("tool handlers", () => {
     assert.deepEqual(stream.samples.map((sample) => sample.offset_seconds), [60, 120, 240, 300]);
   });
 
+  it("custom min_cadence_rpm changes pedaling-only stream output", async () => {
+    const loose = await handlers.get_activity_streams({
+      activity_id: "sample-ride-1",
+      source: "auto",
+      downsample: false,
+      pedaling_only: true,
+      min_cadence_rpm: 70
+    });
+    const strict = await handlers.get_activity_streams({
+      activity_id: "sample-ride-1",
+      source: "auto",
+      downsample: false,
+      pedaling_only: true,
+      min_cadence_rpm: 85
+    });
+    const looseStream = loose.structuredContent.stream as { samples: Array<Record<string, number>> };
+    const strictStream = strict.structuredContent.stream as { samples: Array<Record<string, number>> };
+
+    assert.deepEqual(looseStream.samples.map((sample) => sample.offset_seconds), [60, 120, 180, 240, 300]);
+    assert.deepEqual(strictStream.samples.map((sample) => sample.offset_seconds), [180, 240]);
+  });
+
   it("returns structured errors for invalid stream fields", async () => {
     const result = await handlers.get_activity_streams({
       activity_id: "sample-ride-1",
@@ -952,12 +974,36 @@ describe("tool handlers", () => {
     });
   });
 
-  it("invalid days returns a structured tool error", async () => {
-    const result = await handlers.get_range_summary({ days: 0 });
+  it("days takes precedence over explicit dates on archive and health range tools", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const archiveSummary = await archiveHandlers.get_archive_range_summary({ days: 46, start_date: "2026-04-20", end_date: "2026-04-20" });
+    const health = await archiveHandlers.get_health_metrics_by_date_range({ days: 46, start_date: "2026-04-20", end_date: "2026-04-20", metrics: ["sleep"] });
 
-    assert.equal(result.structuredContent.error, true);
-    assert.equal(result.structuredContent.error_code, "INVALID_DAYS");
-    assert.equal(result.structuredContent.param, "days");
+    assert.equal(archiveSummary.structuredContent.resolved_start_date, "2026-05-01");
+    assert.equal(archiveSummary.structuredContent.resolved_end_date, "2026-06-15");
+    assert.deepEqual(archiveSummary.structuredContent.defaults_applied, {
+      days: "last_n_days_ending_today",
+      explicit_dates: "ignored_because_days_was_provided"
+    });
+    assert.equal(health.structuredContent.resolved_start_date, "2026-05-01");
+    assert.equal(health.structuredContent.resolved_end_date, "2026-06-15");
+  });
+
+  it("invalid days returns structured tool errors on all days-aware range tools", async () => {
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const results = [
+      await handlers.get_range_summary({ days: 0 }),
+      await archiveHandlers.get_archive_range_summary({ days: 0 }),
+      await archiveHandlers.get_health_metrics_by_date_range({ days: 0 })
+    ];
+
+    for (const result of results) {
+      assert.equal(result.structuredContent.error, true);
+      assert.equal(result.structuredContent.error_code, "INVALID_DAYS");
+      assert.equal(result.structuredContent.param, "days");
+    }
   });
 
   it("gets normalized sleep for one date", async () => {
