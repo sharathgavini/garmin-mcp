@@ -358,6 +358,21 @@ describe("tool handlers", () => {
     assert.ok((result.structuredContent.valid_values as string[]).includes("speed_mps"));
   });
 
+  it("decimates activity streams by resolution_seconds", async () => {
+    const result = await handlers.get_activity_streams({
+      activity_id: "sample-ride-1",
+      source: "auto",
+      resolution_seconds: 120,
+      downsample: false
+    });
+    const stream = result.structuredContent.stream as { samples: Array<Record<string, unknown>>; original_sample_count: number; sample_count: number; resolution_seconds: number };
+    assert.equal(stream.resolution_seconds, 120);
+    assert.equal(stream.original_sample_count, 6);
+    assert.ok(stream.sample_count < 6);
+    assert.equal(stream.samples[0].offset_seconds, 0);
+    assert.equal(stream.samples[stream.samples.length - 1].offset_seconds, 300);
+  });
+
   it("returns the explicit missing stream message", async () => {
     const result = await handlers.get_activity_streams({ activity_id: "missing", source: "auto", downsample: false });
     assert.equal(result.structuredContent.found, false);
@@ -406,16 +421,17 @@ describe("tool handlers", () => {
       return child as never;
     };
     const syncHandlers = createToolHandlers(new LocalDataReader(sampleDir), { dataDir: root, spawnProcess: fakeSpawn as never });
-    const started = await syncHandlers.sync_now({ days: 7, force_login: false, force_refresh: true, activity_streams: true, include_raw: true });
+    const started = await syncHandlers.sync_now({ days: 7, force_login: false, force_refresh: true, full: false, force: false, lookback_days: 2, min_interval_minutes: 5, activity_streams: true, include_raw: true });
     assert.equal(started.structuredContent.status, "started");
     assert.equal(started.structuredContent.force_refresh, true);
     assert.equal(spawned.command, "python");
+    assert.ok(spawned.args?.includes("sync.sync_now"));
     assert.ok(spawned.args?.includes("--activity-streams"));
     assert.ok(spawned.args?.includes("--activity-details"));
     assert.ok(spawned.args?.includes("--force-refresh"));
 
     const lock = JSON.parse(await readFile(path.join(root, "sync.lock"), "utf8")) as { job_id: string };
-    const again = await syncHandlers.sync_now({ days: 7, force_login: false, force_refresh: false, activity_streams: true, include_raw: true });
+    const again = await syncHandlers.sync_now({ days: 7, force_login: false, force_refresh: false, full: false, force: false, lookback_days: 2, min_interval_minutes: 5, activity_streams: true, include_raw: true });
     assert.equal(again.structuredContent.status, "already_running");
     assert.equal(again.structuredContent.job_id, lock.job_id);
 
@@ -659,6 +675,22 @@ describe("tool handlers", () => {
     const metrics = result.structuredContent.metrics as Record<string, { records: Array<Record<string, unknown>> }>;
     assert.equal(metrics.sleep.records[0].total_sleep_seconds, 27000);
     assert.equal(metrics.hrv.records[0].last_night_avg, 48);
+  });
+
+  it("defaults null end_date for the three date-ref range tools", async () => {
+    const latestRange = await handlers.get_range_summary({ start_date: "2026-06-13", end_date: null });
+    assert.equal(latestRange.structuredContent.error, undefined);
+    assert.equal(latestRange.structuredContent.resolved_end_date, "2026-06-13");
+
+    const { latest } = await createArchiveFixture();
+    const archiveHandlers = createToolHandlers(new LocalDataReader(latest));
+    const archiveSummary = await archiveHandlers.get_archive_range_summary({ start_date: "2026-05-01", end_date: null });
+    assert.equal(archiveSummary.structuredContent.error, undefined);
+    assert.equal(archiveSummary.structuredContent.resolved_end_date, "2026-05-01");
+
+    const health = await archiveHandlers.get_health_metrics_by_date_range({ start_date: "2026-05-01", end_date: null, metrics: ["sleep"] });
+    assert.equal(health.structuredContent.error, undefined);
+    assert.equal(health.structuredContent.resolved_end_date, "2026-05-01");
   });
 
   it("gets normalized sleep for one date", async () => {

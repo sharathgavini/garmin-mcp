@@ -215,13 +215,50 @@ export function downsampleStream(stream: JsonObject, maxPoints?: number | null):
   return { ...stream, samples: selected, downsampled: true, original_sample_count: samples.length, sample_count: selected.length };
 }
 
-export function shapeStream(stream: JsonObject, options: { fields?: string[]; downsample?: boolean; max_points?: number | null }): JsonObject {
+export function decimateByResolution(stream: JsonObject, resolutionSeconds?: number | null): JsonObject {
+  if (!resolutionSeconds || resolutionSeconds < 1 || !Array.isArray(stream.samples) || stream.samples.length <= 2) {
+    return stream;
+  }
+  const samples = stream.samples as JsonObject[];
+  const selected: JsonObject[] = [];
+  let lastBucket: number | null = null;
+  for (const sample of samples) {
+    const offset = numberValue(sample.offset_seconds);
+    if (offset === null) {
+      continue;
+    }
+    const bucket = Math.floor(offset / resolutionSeconds);
+    if (bucket !== lastBucket) {
+      selected.push(sample);
+      lastBucket = bucket;
+    }
+  }
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  if (selected[0] !== first) {
+    selected.unshift(first);
+  }
+  if (selected[selected.length - 1] !== last) {
+    selected.push(last);
+  }
+  return {
+    ...stream,
+    samples: selected,
+    downsampled: true,
+    resolution_seconds: resolutionSeconds,
+    original_sample_count: samples.length,
+    sample_count: selected.length
+  };
+}
+
+export function shapeStream(stream: JsonObject, options: { fields?: string[]; downsample?: boolean; max_points?: number | null; resolution_seconds?: number | null }): JsonObject {
   const normalized = normalizeRequestedStreamFields(options.fields);
   const filtered = selectStreamFields(stream, normalized.fields);
   if (Object.keys(normalized.aliases_used).length > 0) {
     filtered.field_aliases_used = normalized.aliases_used;
   }
-  return options.downsample ? downsampleStream(filtered, options.max_points ?? null) : filtered;
+  const decimated = decimateByResolution(filtered, options.resolution_seconds ?? null);
+  return options.downsample ? downsampleStream(decimated, options.max_points ?? null) : decimated;
 }
 
 // Analysis output is structured for an AI client to interpret, not as final medical/training advice.

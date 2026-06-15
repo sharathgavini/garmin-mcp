@@ -11,3 +11,6 @@
 - Added natural date-range presets for range-oriented MCP tools.
 - Added targeted `sync.repair_activity_details` CLI and MCP repair status exposure.
 - Added structured `INVALID_FIELD_NAME` and `NO_DATA_FOR_RANGE` responses plus stream field aliases.
+- Added incremental `sync.sync_now` wrapper with sync state, cooldown-light runs, lookback windows, and per-dataset watermark status.
+- Documented null `end_date` defaulting to `start_date` for single-day range safety.
+- Added `resolution_seconds` stream decimation for lightweight workout overview queries.

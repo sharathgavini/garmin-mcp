@@ -343,7 +343,22 @@ Do not expose a public unauthenticated sync endpoint.
 
 Do not add unauthenticated sync.
 
-The MCP server exposes `sync_now` only through the authenticated `/mcp` channel. It creates `/app/data/latest/sync.lock`, starts `python -m sync.main` in the background, and writes running state to `/app/data/latest/latest_sync_status.json`. Poll `get_sync_status` after calling it.
+The MCP server exposes `sync_now` only through the authenticated `/mcp` channel. It creates `/app/data/latest/sync.lock`, starts `python -m sync.sync_now` in the background, and writes running state to `/app/data/latest/latest_sync_status.json`. Poll `get_sync_status` after calling it.
+
+Delta vs full sync:
+
+```bash
+docker exec garmin-mcp python -m sync.sync_now --output /app/data/latest
+docker exec garmin-mcp python -m sync.sync_now --output /app/data/latest --full
+```
+
+Incremental state is stored at:
+
+```text
+/app/data/archive/sync_state.json
+```
+
+Status includes `run_type`, per-dataset watermarks, records fetched/upserted, lookback days, and cooldown settings.
 
 The existing bearer/OAuth protections remain required.
 

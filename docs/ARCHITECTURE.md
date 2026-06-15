@@ -7,7 +7,7 @@ Garmin MCP is split into a sync plane and a serving plane.
 ```mermaid
 flowchart TB
   Garmin["Garmin Connect"]
-  Sync["Python sync jobs\nsync.main / sync.backfill"]
+  Sync["Python sync jobs\nsync.main / sync.backfill / sync.sync_now"]
   Session["Encrypted Garmin session\n/app/secrets/.garmin-session.enc"]
   Data["Persistent Garmin JSON\n/app/data"]
   Latest["latest/\nfast current data"]
@@ -137,18 +137,20 @@ sequenceDiagram
   participant User as ChatGPT / Claude
   participant MCP as MCP server
   participant Lock as sync.lock
-  participant Py as python -m sync.main
+  participant Py as python -m sync.sync_now
   participant Garmin as Garmin Connect
   participant Data as /app/data/latest
+  participant State as /app/data/archive/sync_state.json
 
   User->>MCP: sync_now({ force_refresh: true })
   MCP->>Lock: create sync.lock
   MCP->>Data: write latest_sync_status.json running
   MCP-->>User: status started + job_id
-  MCP->>Py: spawn background sync
-  Py->>Garmin: fetch daily/sleep/HRV/stress/body battery
-  Py->>Garmin: fetch activities/details/streams
+  MCP->>Py: spawn background incremental sync
+  Py->>State: read watermarks and cooldown state
+  Py->>Garmin: fetch delta window plus overlap
   Py->>Data: write normalized JSON + raw payloads
+  Py->>State: advance watermarks on success
   Py->>Data: write sync completeness metadata
   Py->>Lock: remove sync.lock
   User->>MCP: get_sync_completeness

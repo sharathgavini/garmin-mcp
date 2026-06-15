@@ -29,6 +29,8 @@ If stream output is empty or partial, the MCP response includes extraction statu
 
 Canonical stream field names include `heart_rate`, `cadence`, `speed_mps`, `power_watts`, `altitude_m`, `distance_m`, `latitude`, `longitude`, and `temperature`. Accepted aliases include `speed` -> `speed_mps`, `altitude`/`elevation` -> `altitude_m`, and `distance` -> `distance_m`. Invalid field names return `INVALID_FIELD_NAME` with valid values.
 
+For overview queries, pass `resolution_seconds` to `get_activity_streams`, `get_latest_workout_streams`, or `get_latest_ride_streams`. This keeps roughly one sample per N seconds and preserves first/last samples. Leave it unset for full-resolution streams.
+
 If activity details are missing but activity streams exist, run targeted repair:
 
 ```bash

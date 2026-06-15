@@ -44,6 +44,7 @@ For single-day sleep, HRV, or recovery questions, prefer the dedicated single-da
 - "Use Garmin MCP and get my recovery for 2026-06-14."
 
 For date range tools, `end_date` is optional and defaults to `start_date`. Some clients send `end_date: null` for a single day; this is accepted.
+The response includes `defaults_applied`, `resolved_start_date`, and `resolved_end_date` so agents can state exactly what range was used.
 
 Range-oriented tools can also use `date_range_preset`: `today`, `yesterday`, `last_7_days`, `last_14_days`, `last_30_days`, `last_90_days`, `this_week`, `last_week`, `this_month`, `last_month`, or `year_to_date`. Responses include `resolved_start_date` and `resolved_end_date`.
 
@@ -64,6 +65,8 @@ docker exec garmin-mcp python -m sync.repair_activity_details --start-date 2026-
 Use `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies` for coaching-ready summaries. These tools are conservative and report estimates or missing data instead of pretending to be Garmin official scores.
 
 Tool errors use a structured envelope with `error_code`, `message`, and fields such as `param`, `received`, `valid_values`, or `hint`. For stream fields, use canonical names like `speed_mps`, `altitude_m`, and `distance_m`; aliases `speed`, `altitude`, and `distance` are accepted.
+
+`sync_now` now launches `python -m sync.sync_now`, which is incremental by default. Use `full: true` only when a complete pull is needed, and `force: true` to bypass the cooldown guard.
 
 Every tool response includes `source` or `sources_used`. Do not infer whether data came from latest or archive if the response already says it.
 

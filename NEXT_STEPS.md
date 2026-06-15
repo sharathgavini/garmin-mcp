@@ -8,8 +8,9 @@ Recommended next validation steps:
 4. Run `audit_data_quality` for `last_90_days`.
 5. If `activity_details` are missing, run `docker exec garmin-mcp python -m sync.repair_activity_details --start-date 2026-03-18 --end-date 2026-06-14 --output /app/data/archive --sleep-seconds 1`.
 6. Verify `get_recovery_for_date` reports `full_recovery_data_available: true` for the latest completed sleep date.
-7. Validate `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.
-8. Run historical backfill with activity details and streams enabled if archive stream coverage is incomplete.
+7. Call `sync_now` twice and verify the second run reports `run_type: cooldown-light` unless `force: true` is used.
+8. Validate `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.
+9. Run historical backfill with activity details and streams enabled if archive stream coverage is incomplete.
 
 Useful commands:
 

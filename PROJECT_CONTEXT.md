@@ -15,3 +15,5 @@ Agent clients should start with `get_tool_guide` when routing is unclear, call `
 Range tools support natural presets such as `last_14_days`, `last_30_days`, and `last_90_days`. Coaching-ready summaries are exposed through `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies`.
 
 If archive activity streams are healthy but activity details are missing, use `python -m sync.repair_activity_details` instead of rerunning full historical backfill.
+
+Authenticated MCP `sync_now` launches `python -m sync.sync_now`, which is incremental by default and records watermarks in `/app/data/archive/sync_state.json`.

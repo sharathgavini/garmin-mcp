@@ -57,6 +57,7 @@ For AI clients, the recommended first calls are:
 - `get_recovery_dashboard`, `get_training_load_dashboard`, and `detect_training_anomalies` for coaching-ready summaries.
 
 Range-oriented tools accept explicit `start_date`/`end_date` or presets such as `last_14_days`, `last_30_days`, and `last_90_days`.
+If `end_date` is omitted or `null`, MCP defaults it to `start_date` for single-day safety and returns the resolved dates in the response.
 
 ## Common Commands
 
@@ -91,6 +92,15 @@ Repair missing archive activity details without rerunning full backfill:
 python -m sync.repair_activity_details --start-date 2026-03-18 --end-date 2026-06-14 --output ./local-data/archive --sleep-seconds 1
 ```
 
+Run incremental sync locally:
+
+```bash
+python -m sync.sync_now --output ./local-data/latest
+python -m sync.sync_now --output ./local-data/latest --full
+```
+
+`sync.sync_now` writes `/archive/sync_state.json` next to the latest directory and augments `latest_sync_status.json` with `run_type`, `dataset_watermarks`, fetched/upserted counts, lookback, and cooldown metadata.
+
 ## Supported Deployment Modes
 
 - Local development with `sample-data/`
@@ -107,4 +117,4 @@ python -m sync.repair_activity_details --start-date 2026-03-18 --end-date 2026-0
 
 ## Tool Error Envelope
 
-MCP tools return structured errors with `error_code`, `message`, and helpful fields such as `param`, `received`, `valid_values`, or `hint`. Common codes include `INVALID_FIELD_NAME` and `NO_DATA_FOR_RANGE`.
+MCP tools return structured errors with `error_code`, `message`, and helpful fields such as `param`, `received`, `valid_values`, or `hint`. Common codes include `MISSING_REQUIRED_PARAM`, `INVALID_FIELD_NAME`, and `NO_DATA_FOR_RANGE`.

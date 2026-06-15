@@ -13,6 +13,10 @@ export interface SyncNowInput {
   days?: number;
   force_login?: boolean;
   force_refresh?: boolean;
+  full?: boolean;
+  force?: boolean;
+  lookback_days?: number;
+  min_interval_minutes?: number;
   activity_streams?: boolean;
   include_raw?: boolean;
 }
@@ -51,7 +55,7 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
   // Keep arguments explicit so scheduled sync and manual sync behave the same way.
   const args = [
     "-m",
-    "sync.main",
+    "sync.sync_now",
     "--days",
     String(input.days ?? 7),
     "--output",
@@ -68,6 +72,18 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
   }
   if (input.force_refresh) {
     args.push("--force-refresh");
+  }
+  if (input.full) {
+    args.push("--full");
+  }
+  if (input.force) {
+    args.push("--force");
+  }
+  if (input.lookback_days !== undefined) {
+    args.push("--lookback-days", String(input.lookback_days));
+  }
+  if (input.min_interval_minutes !== undefined) {
+    args.push("--min-interval-minutes", String(input.min_interval_minutes));
   }
 
   const spawnProcess = options.spawnProcess ?? spawn;
@@ -102,6 +118,8 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
     job_id: jobId,
     started_at: startedAt,
     force_refresh: input.force_refresh ?? false,
+    full: input.full ?? false,
+    force: input.force ?? false,
     message: "Sync started"
   };
 }

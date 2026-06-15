@@ -17,6 +17,7 @@ Current core capabilities:
 - Natural date presets on range-oriented tools
 - Targeted archive activity-detail repair via `python -m sync.repair_activity_details`
 - Structured stream field errors and aliases for `get_activity_streams`
+- Incremental `sync_now` wrapper via `python -m sync.sync_now` with cooldown, lookback, sync state, and watermark status
 - Nullable/optional date-range `end_date` schemas for single-day queries
 - Single-date sleep, HRV, and recovery tools
 

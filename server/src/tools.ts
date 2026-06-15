@@ -41,7 +41,8 @@ const workoutFilterShape = {
 const streamOptionsShape = {
   fields: z.array(z.string()).optional(),
   downsample: z.boolean().default(false),
-  max_points: z.number().int().min(1).nullable().optional()
+  max_points: z.number().int().min(1).nullable().optional(),
+  resolution_seconds: z.number().int().min(1).nullable().optional()
 };
 
 export const inputShapes = {
@@ -93,6 +94,10 @@ export const inputShapes = {
     days: z.number().int().min(1).max(30).default(7),
     force_login: z.boolean().default(false),
     force_refresh: z.boolean().default(false),
+    full: z.boolean().default(false),
+    force: z.boolean().default(false),
+    lookback_days: z.number().int().min(0).max(14).default(2),
+    min_interval_minutes: z.number().int().min(0).max(1440).default(5),
     activity_streams: z.boolean().default(true),
     include_raw: z.boolean().default(true)
   },
@@ -1582,6 +1587,9 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
       return ok({
         requested_start_date: range.requested_start_date,
         requested_end_date: range.requested_end_date,
+        date_range_preset: range.date_range_preset,
+        resolved_start_date: range.resolved_start_date,
+        resolved_end_date: range.resolved_end_date,
         coverage: dateCoverage(startDate, endDate, rangeRows),
         defaults_applied: range.defaults_applied,
         start_date: startDate,

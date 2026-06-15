@@ -182,8 +182,11 @@ Inputs:
 - `fields` optional
 - `downsample` optional
 - `max_points` optional
+- `resolution_seconds` optional
 
 Canonical stream fields include `heart_rate`, `cadence`, `speed_mps`, `power_watts`, `altitude_m`, `distance_m`, `latitude`, `longitude`, and `temperature`. Aliases `speed`, `altitude`, `elevation`, and `distance` are accepted and mapped to canonical names. Unknown fields return `INVALID_FIELD_NAME`.
+
+Use `resolution_seconds` for lightweight overview streams. Default unset returns full resolution.
 
 ## Workout Tools
 
@@ -473,10 +476,14 @@ Inputs:
 - `days`
 - `force_login`
 - `force_refresh`
+- `full`
+- `force`
+- `lookback_days`
+- `min_interval_minutes`
 - `activity_streams`
 - `include_raw`
 
-Successful sync means the command completed and wrote normalized JSON. Complete sync means the latest files include daily, sleep, HRV, stress, body battery, activities, details, and streams where Garmin exposes them. `force_refresh: true` asks the sync job to refresh all health datasets, activity summaries, details, streams, and raw payloads instead of relying on existing local assumptions.
+Successful sync means the command completed and wrote normalized JSON. Complete sync means the latest files include daily, sleep, HRV, stress, body battery, activities, details, and streams where Garmin exposes them. `sync_now` is incremental by default through `python -m sync.sync_now`; use `full: true` for a complete pull and `force: true` to bypass the cooldown guard. Status includes `run_type` and `dataset_watermarks`.
 
 ### `get_sync_status`
 
