@@ -2,6 +2,7 @@ from sync.activity_streams import client_method_inventory, normalize_activity_st
 
 
 def test_stream_normalization_from_mocked_garmin_payload():
+    # Object-row Garmin detail metrics should become normalized stream samples.
     stream = normalize_activity_stream(
         "a1",
         {
@@ -23,6 +24,7 @@ def test_stream_normalization_from_mocked_garmin_payload():
 
 
 def test_column_based_streams_are_merged_by_offset():
+    # Column arrays from graph endpoints should merge into one timeline by offset.
     stream = normalize_activity_stream(
         "a2",
         {
@@ -47,6 +49,7 @@ def test_column_based_streams_are_merged_by_offset():
 
 
 def test_descriptor_metric_streams_extract_garmin_activity_detail_metrics():
+    # Descriptor/index payloads are another Garmin stream shape used by activity details.
     stream = normalize_activity_stream(
         "a4",
         {
@@ -80,6 +83,7 @@ def test_descriptor_metric_streams_extract_garmin_activity_detail_metrics():
 
 
 def test_no_samples_records_checked_payloads_without_false_hr_claim():
+    # Missing samples should be explicit so agents do not assume HR data exists.
     stream = normalize_activity_stream(
         "a3",
         {
@@ -99,6 +103,7 @@ def test_no_samples_records_checked_payloads_without_false_hr_claim():
 
 
 def test_method_inventory_captures_matching_client_methods():
+    # Inspector method discovery is token-based and ignores unrelated helpers.
     class Client:
         def get_activity_graphs(self):
             return {}

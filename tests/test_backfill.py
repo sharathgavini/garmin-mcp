@@ -6,6 +6,7 @@ import pytest
 from sync import backfill
 
 
+# Fake client mirrors the Garmin methods used by backfill so tests never call Garmin.
 class FakeBackfillClient:
     def __init__(self):
         self.detail_calls = []
@@ -79,6 +80,7 @@ class FakeBackfillClient:
 
 
 def test_chunk_ranges_are_inclusive():
+    # Inclusive chunks keep checkpoint completed_until aligned with real dates.
     assert backfill.chunk_ranges(date(2026, 6, 1), date(2026, 6, 8), 3) == [
         (date(2026, 6, 1), date(2026, 6, 3)),
         (date(2026, 6, 4), date(2026, 6, 6)),
@@ -87,6 +89,7 @@ def test_chunk_ranges_are_inclusive():
 
 
 def test_write_partitioned_rows_by_month(tmp_path):
+    # Month partitions are the archive layout consumed by server range tools.
     backfill.write_partitioned_rows(
         tmp_path,
         "daily",
@@ -99,12 +102,14 @@ def test_write_partitioned_rows_by_month(tmp_path):
 
 
 def test_resume_date_uses_completed_until():
+    # Resume starts the day after the last successfully completed date.
     checkpoint = {"completed_until": "2026-06-03"}
 
     assert backfill.resume_date(date(2026, 6, 1), checkpoint) == date(2026, 6, 4)
 
 
 def test_existing_activity_details_are_not_downloaded(tmp_path):
+    # Existing details are skipped unless --force is used.
     client = FakeBackfillClient()
     details = tmp_path / "activity_details"
     details.mkdir()
@@ -159,6 +164,7 @@ def test_backfill_partial_failure_writes_checkpoint(monkeypatch, tmp_path):
 
 
 def test_run_backfill_writes_partitions_and_manifest(tmp_path):
+    # Main happy path: health partitions, activity files, streams, and manifest.
     client = FakeBackfillClient()
 
     backfill.run_backfill(

@@ -1,1 +1,2 @@
+# Daily latest sync at 6:00 AM using the container timezone (TZ=Asia/Kolkata).
 0 6 * * * /app/docker/selfhost/run-sync.sh

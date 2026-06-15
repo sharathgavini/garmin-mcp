@@ -2,6 +2,7 @@
 export type JsonObject = Record<string, unknown>;
 
 export interface Manifest {
+  // Latest manifest written by sync/main.py; GCS mode also uses files as object paths.
   generated_at?: string;
   source?: string;
   date_range?: {
@@ -23,6 +24,8 @@ export interface ActivitySummary extends JsonObject {
 }
 
 export interface GarminDataReader {
+  // Storage adapters implement the same interface so tools do not care whether
+  // data came from local bind mounts or GCS.
   readManifest(): Promise<Manifest>;
   readCollection(name: string): Promise<JsonObject[]>;
   readArchiveCollection(name: string, startDate: string, endDate: string): Promise<ArchiveCollectionResult>;
@@ -33,6 +36,7 @@ export interface GarminDataReader {
 }
 
 export interface ArchiveCollectionResult {
+  // Archive reads include both rows and coverage metadata so agents can explain gaps.
   collection: string;
   start_date: string;
   end_date: string;

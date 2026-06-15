@@ -27,6 +27,8 @@ STREAM_FIELDS = [
     "temperature",
 ]
 
+# Tokens used by the inspector to discover activity-related methods on whatever
+# garminconnect client version is installed locally.
 METHOD_TOKENS = [
     "activity",
     "activities",
@@ -51,6 +53,8 @@ METHOD_TOKENS = [
     "route",
 ]
 
+# Known Garmin client method names that may hold useful detail or stream data.
+# Missing methods are recorded in the debug payload instead of failing sync.
 LIKELY_ACTIVITY_METHODS: dict[str, tuple[str, tuple[Any, ...]]] = {
     "activity": ("get_activity", ("{activity_id}",)),
     "activity_details": ("get_activity_details", ("{activity_id}",)),
@@ -74,6 +78,7 @@ LIKELY_ACTIVITY_METHODS: dict[str, tuple[str, tuple[Any, ...]]] = {
     "activity_gear": ("get_activity_gear", ("{activity_id}",)),
 }
 
+# Normalized stream field names mapped to the many names Garmin payloads use.
 FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "timestamp": ("timestamp", "time", "startTimeGMT", "startTimeLocal", "clockDuration"),
     "offset_seconds": ("offset_seconds", "offsetSeconds", "timerDuration", "duration", "timeOffset", "offset"),
@@ -89,6 +94,7 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "temperature": ("temperature", "ambientTemperature", "airTemperature"),
 }
 
+# Some Garmin graph payloads are columnar arrays instead of row objects.
 COLUMN_SERIES_MAP: dict[str, str] = {
     "heartRateValues": "heart_rate",
     "heart_rate_values": "heart_rate",
@@ -110,6 +116,7 @@ COLUMN_SERIES_MAP: dict[str, str] = {
 
 
 def client_method_inventory(client: Any) -> list[dict[str, Any]]:
+    # Keep an inventory for diagnostics so new Garmin API shapes can be found.
     methods = []
     for name in sorted(dir(client)):
         lowered = name.lower()
@@ -135,6 +142,7 @@ def fetch_activity_payloads(client: Any, activity_id: str) -> dict[str, Any]:
 
 
 def normalize_activity_stream(activity_id: str, payloads: dict[str, Any]) -> dict[str, Any]:
+    # Try every payload shape and merge the discovered samples into one timeline.
     samples, checked = extract_samples_from_payloads(payloads)
     laps = first_present(
         endpoint_payload(payloads.get("activity_splits")),
@@ -181,6 +189,8 @@ def normalize_activity_stream(activity_id: str, payloads: dict[str, Any]) -> dic
 
 
 def extract_samples_from_payloads(payloads: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    # Each endpoint is inspected independently; the final stream is the union of
+    # descriptor, row, and column samples from all successful endpoints.
     candidates: list[tuple[str, list[dict[str, Any]]]] = []
     checked = []
     for name, wrapped in payloads.items():
@@ -212,6 +222,8 @@ def extract_samples(payload: Any) -> list[dict[str, Any]]:
 
 
 def extract_descriptor_metric_samples(payload: Any) -> list[dict[str, Any]]:
+    # Garmin detail payloads often pair metricDescriptors with rows of metric
+    # values. This recursive extractor finds that pattern wherever it appears.
     found: list[dict[str, Any]] = []
     if isinstance(payload, dict):
         descriptors = payload.get("metricDescriptors")
@@ -229,6 +241,7 @@ def extract_descriptor_metric_samples(payload: Any) -> list[dict[str, Any]]:
 
 
 def samples_from_metric_descriptors(descriptors: list[Any], metrics_rows: list[Any]) -> list[dict[str, Any]]:
+    # Convert descriptor indexes into stable field names before walking rows.
     index_to_field: dict[int, str] = {}
     for descriptor in descriptors:
         if not isinstance(descriptor, dict):
@@ -261,6 +274,8 @@ def samples_from_metric_descriptors(descriptors: list[Any], metrics_rows: list[A
 
 
 def descriptor_key_to_field(key: str) -> str | None:
+    # Descriptor keys are not stable across sports, so use conservative substring
+    # matching and ignore ambiguous values like vertical speed.
     lowered = key.lower()
     if "timestamp" in lowered:
         return "timestamp"
@@ -288,6 +303,7 @@ def descriptor_key_to_field(key: str) -> str | None:
 
 
 def extract_row_samples(payload: Any) -> list[dict[str, Any]]:
+    # Row-shaped streams are arrays of objects or compact numeric arrays.
     candidates = find_sample_lists(payload)
     samples: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -296,6 +312,7 @@ def extract_row_samples(payload: Any) -> list[dict[str, Any]]:
 
 
 def extract_column_samples(payload: Any) -> list[dict[str, Any]]:
+    # Column-shaped streams are merged by offset so HR/cadence/speed series line up.
     merged: dict[str, dict[str, Any]] = defaultdict(dict)
     for path, key, values in find_column_series(payload):
         field = COLUMN_SERIES_MAP.get(key)
@@ -319,6 +336,7 @@ def extract_column_samples(payload: Any) -> list[dict[str, Any]]:
 
 
 def find_sample_lists(value: Any) -> list[list[Any]]:
+    # Walk the full payload tree because Garmin nests streams differently by endpoint.
     found: list[list[Any]] = []
     if isinstance(value, list):
         if len(value) >= 2 and all(is_sample_like(item) for item in value[: min(len(value), 10)]):
@@ -335,6 +353,7 @@ def find_sample_lists(value: Any) -> list[list[Any]]:
 
 
 def find_column_series(value: Any, path: str = "$") -> list[tuple[str, str, list[Any]]]:
+    # Retain JSON paths to help debug which endpoint contributed a column series.
     found: list[tuple[str, str, list[Any]]] = []
     if isinstance(value, dict):
         for key, item in value.items():
@@ -351,6 +370,7 @@ def find_column_series(value: Any, path: str = "$") -> list[tuple[str, str, list
 
 
 def is_sample_like(value: Any) -> bool:
+    # A candidate list must look like stream rows before we normalize it.
     if isinstance(value, dict):
         keys = {key.lower() for key in value.keys()}
         aliases = {alias.lower() for names in FIELD_ALIASES.values() for alias in names}
@@ -379,6 +399,7 @@ def streamish_key(key: str) -> bool:
 
 
 def normalize_sample(value: Any, index: int) -> dict[str, Any]:
+    # Normalize object rows and compact numeric rows into the same sample schema.
     if isinstance(value, dict):
         sample = {"offset_seconds": index}
         for field, aliases in FIELD_ALIASES.items():
@@ -401,6 +422,7 @@ def normalize_sample(value: Any, index: int) -> dict[str, Any]:
 
 
 def merge_samples(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Prefer the first non-null value for each field at a timestamp/offset.
     merged: dict[str, dict[str, Any]] = {}
     for index, sample in enumerate(samples):
         if not meaningful_sample(sample):
@@ -414,6 +436,7 @@ def merge_samples(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def sample_key(sample: dict[str, Any], index: int) -> str:
+    # Timestamp beats offset, offset beats array index when de-duplicating samples.
     if sample.get("timestamp") is not None:
         return f"ts:{sample['timestamp']}"
     if sample.get("offset_seconds") is not None:
@@ -446,6 +469,7 @@ def available_fields(samples: list[dict[str, Any]]) -> list[str]:
 
 
 def missing_notes(missing: list[str], sample_count: int, checked: list[dict[str, Any]] | None = None) -> list[str]:
+    # Explain missing fields to AI clients so they do not invent data or fall back elsewhere.
     if sample_count == 0:
         checked_names = [str(item.get("name")) for item in checked or []]
         suffix = f" Checked payloads: {', '.join(checked_names)}." if checked_names else ""
@@ -454,6 +478,7 @@ def missing_notes(missing: list[str], sample_count: int, checked: list[dict[str,
 
 
 def endpoint_payload(value: Any) -> Any:
+    # Endpoint wrappers include call metadata; downstream normalization needs the raw payload.
     if isinstance(value, dict) and "payload" in value and ("method" in value or "available" in value):
         return value.get("payload")
     return value
@@ -485,6 +510,7 @@ def first_present(*values: Any) -> Any:
 
 
 def safe_endpoint_call(func: Callable[..., Any], *args: Any, method_name: str) -> dict[str, Any]:
+    # Capture endpoint failures as data so one unavailable Garmin endpoint does not break sync.
     try:
         payload = func(*args)
         return {

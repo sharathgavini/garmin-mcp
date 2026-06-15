@@ -6,6 +6,7 @@ import pytest
 from sync.crypto import SessionCryptoError, decrypt_session, encrypt_session
 
 
+# These tests protect encrypted Garmin session storage; plaintext must never leak.
 def test_encrypt_decrypt_round_trip(monkeypatch):
     monkeypatch.setenv("GARMIN_SESSION_KEY", base64.b64encode(b"1" * 32).decode("ascii"))
     encrypted = encrypt_session("serialized-garth-token")

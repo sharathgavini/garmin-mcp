@@ -3,6 +3,7 @@ import json
 from sync import main as sync_main
 
 
+# Fake Garmin client exercises latest sync without network or real credentials.
 class FakeGarth:
     def dumps(self):
         return "serialized"

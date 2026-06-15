@@ -35,6 +35,7 @@ def save_session(client: Garmin, session_file: Path = DEFAULT_SESSION_FILE) -> b
 
 
 def validate_session(client: Garmin) -> bool:
+    # A cheap authenticated API call proves the restored garth tokenstore still works.
     try:
         client.garth.connectapi(client.garmin_connect_user_settings_url)
         return True
@@ -63,6 +64,7 @@ def login_or_restore(
 
     username = email or os.environ["GARMIN_EMAIL"]
     secret = password or os.environ["GARMIN_PASSWORD"]
+    # Fresh login is the only place plaintext credentials are used.
     client = Garmin(username, secret)
     client.login()
     save_session(client, session_file)

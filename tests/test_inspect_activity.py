@@ -3,6 +3,7 @@ import json
 from sync.inspect_activity import inspect_activity
 
 
+# Inspector tests use a partial Garmin client to verify debug output survives endpoint failures.
 class InspectClient:
     def get_activity(self, activity_id):
         return {

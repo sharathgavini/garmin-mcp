@@ -11,6 +11,7 @@ import type { GarminDataReader, JsonObject, Manifest } from "./types.js";
 import { allActivities, activityId, analyze, latestWorkout, shapeStream, streamCompleteness, summarizeWorkout, type StreamSource } from "./workouts.js";
 
 const isoDateSchema = z.string().refine(isIsoDate, "Use YYYY-MM-DD.");
+// Claude sometimes sends null for single-day range end dates; treat that as omitted.
 const optionalIsoDateSchema = z.preprocess((value) => (value === null ? undefined : value), isoDateSchema.optional());
 const daysSchema = z.number().int().min(1).max(30).default(14);
 const workoutDaysSchema = z.number().int().min(1).max(90).default(30);
@@ -190,6 +191,7 @@ export const inputSchemas = {
 export type ToolName = keyof typeof inputSchemas;
 
 function ok(data: JsonObject): { content: Array<{ type: "text"; text: string }>; structuredContent: JsonObject } {
+  // Every MCP response gets source metadata unless the handler supplied richer source data.
   const structuredContent = "source" in data || "sources_used" in data ? data : { source: "latest", ...data };
   return {
     content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }],
@@ -201,6 +203,7 @@ type DateRangeInput = { start_date: string; end_date?: string; [key: string]: un
 const healthDatasets = ["daily", "sleep", "hrv", "stress", "body_battery"];
 
 function requestedRange(input: DateRangeInput): { startDate: string; endDate: string; requested_start_date: string; requested_end_date: string; defaults_applied: JsonObject } {
+  // Defaulting happens after validation so handlers never silently collapse ranges.
   const endDate = input.end_date ?? input.start_date;
   return {
     startDate: input.start_date,
@@ -267,6 +270,8 @@ function uniqueStrings(values: unknown[]): string[] {
 }
 
 function recoveryReadiness(sleep: JsonObject | null, hrv: JsonObject | null, stress: JsonObject | null, bodyBattery: JsonObject | null): JsonObject {
+  // This is the AI-facing recovery contract: if any required signal is absent,
+  // clients should say what is missing instead of pretending recovery is complete.
   const missing: string[] = [];
   if (!firstNumber(sleep, ["sleep_score", "score"])) missing.push("sleep_score");
   if (!firstNumber(sleep, ["total_sleep_seconds"])) missing.push("sleep_duration");
@@ -304,6 +309,7 @@ async function safeCollection(reader: GarminDataReader, collection: string): Pro
 
 // Activity range filters are shared by archive tools and keep sport/category matching consistent.
 function filterActivities(rows: JsonObject[], input: { sport_categories?: string[]; activity_types?: string[] }): JsonObject[] {
+  // Activity filters support both raw Garmin type strings and normalized sport buckets.
   const types = (input.activity_types ?? []).map((item) => item.toLowerCase());
   return rows.filter((activity) => {
     const type = String(activity.type ?? activity.activity_type ?? activity.activityType ?? "").toLowerCase();
@@ -374,6 +380,7 @@ function compactActivity(activity: JsonObject, detail: JsonObject | null, stream
 
 // Health summaries return averages opportunistically; missing metrics remain null instead of being invented.
 function healthSummary(rows: JsonObject[], metric: string): JsonObject {
+  // Use averages only as summaries; detailed rows remain available to the caller.
   return {
     metric,
     record_count: rows.length,
@@ -394,6 +401,7 @@ function healthSummary(rows: JsonObject[], metric: string): JsonObject {
 
 // Period summaries are deliberately structured for LLM interpretation rather than final coaching advice.
 function periodSummary(activities: JsonObject[], metrics: Record<string, JsonObject[]>): JsonObject {
+  // Period summaries are broad enough for comparison without dumping every raw row.
   const totalDuration = sumNumber(activities, ["duration_seconds", "durationSeconds", "elapsedDuration"]);
   const totalDistance = sumNumber(activities, ["distance_meters", "distanceMeters", "distance"]);
   return {
@@ -521,6 +529,7 @@ function shapedHrv(date: string, source: string, row: JsonObject | null, include
 }
 
 function streamExtractionNotice(stream: JsonObject | null): JsonObject {
+  // Surface extraction problems in natural-language-friendly fields for MCP clients.
   if (!stream) {
     return {};
   }
@@ -578,6 +587,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
   }
 
   async function collectionRowForDate(collection: string, date: string, source: StreamSource = "auto") {
+    // Single-date tools prefer latest data, then fall back to archive when source is auto.
     if (source === "latest" || source === "auto") {
       const rows = await safeCollection(reader, collection);
       const row = rows.find((item) => item.date === date) ?? null;
@@ -630,6 +640,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
   }
 
   async function capabilities(): Promise<JsonObject> {
+    // Capability discovery answers "what data do I have?" before clients choose tools.
     const [manifest, latestActivities, archiveActivitiesRows, latestSleep, latestHrv, latestBodyBattery, latestStress] = await Promise.all([
       reader.readManifest().catch(() => ({} as Manifest)),
       reader.readCollection("activities").catch(() => [] as JsonObject[]),
@@ -699,6 +710,7 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
   }
 
   async function datasetStatus(): Promise<JsonObject> {
+    // Dataset status is intentionally latest-only; archive coverage is reported elsewhere.
     const entries = await Promise.all(
       [...healthDatasets, "activities"].map(async (dataset) => {
         const rows = await reader.readCollection(dataset).catch(() => [] as JsonObject[]);
@@ -709,6 +721,8 @@ export function createToolHandlers(reader: GarminDataReader, options: SyncNowOpt
   }
 
   async function syncCompleteness(): Promise<JsonObject> {
+    // Merge the status file with live latest-file inspection so diagnostics still work
+    // if the status file predates the completeness contract.
     const status = await readSyncStatus();
     const datasets = await datasetStatus();
     const latestDates = Object.fromEntries(Object.entries(datasets).map(([name, value]) => [name, (value as JsonObject).latest_date ?? null]));

@@ -12,6 +12,7 @@ import { classifySport } from "../src/sports.js";
 const sampleDir = path.resolve(process.cwd(), "../sample-data");
 
 async function createArchiveFixture() {
+  // Build a throwaway latest/archive tree that mirrors the TrueNAS layout.
   const root = await mkdtemp(path.join(os.tmpdir(), "garmin-archive-"));
   const latest = path.join(root, "latest");
   const archive = path.join(root, "archive");
@@ -20,6 +21,7 @@ async function createArchiveFixture() {
   await writeFile(path.join(latest, "activities.json"), "[]");
 
   async function writePartition(dataset: string, year: string, month: string, rows: unknown[]) {
+    // Archive readers expect year=YYYY/month=MM partition directories.
     const dir = path.join(archive, dataset, `year=${year}`, `month=${month}`);
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, `${dataset}.json`), JSON.stringify(rows, null, 2));

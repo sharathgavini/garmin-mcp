@@ -3,6 +3,7 @@ import json
 from sync.renormalize import renormalize
 
 
+# Renormalize tests prove raw payloads can repair normalized sleep/HRV without Garmin calls.
 def test_renormalize_latest_sleep_hrv_from_raw_files(tmp_path):
     raw = tmp_path / "latest" / "raw"
     output = tmp_path / "latest"

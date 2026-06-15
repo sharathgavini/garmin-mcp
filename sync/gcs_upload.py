@@ -20,6 +20,7 @@ NORMALIZED_TOP_LEVEL_FILES = {
 
 
 def upload_file_to_gcs(local_path: Path, bucket: str, object_name: str) -> None:
+    # Authentication comes from Application Default Credentials or workload identity.
     client = storage.Client()
     blob = client.bucket(bucket).blob(object_name)
     blob.upload_from_filename(str(local_path), content_type="application/json")

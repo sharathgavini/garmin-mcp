@@ -45,6 +45,8 @@ def run_sync(
     force_refresh: bool = False,
     session_file: Path = DEFAULT_SESSION_FILE,
 ) -> None:
+    # The latest sync is intentionally all-or-status-file: callers inspect
+    # latest_sync_status.json to decide whether the data is complete enough.
     started_at = datetime.now(timezone.utc)
     days_to_fetch = _date_range(days)
     try:
@@ -68,6 +70,8 @@ def run_sync(
 
         # Garmin health endpoints are day-based, so latest sync loops over each requested day.
         for day in days_to_fetch:
+            # Fetch every recovery dataset for each day so sync_now can refresh
+            # sleep/HRV/body battery without relying on previously written files.
             day_text = day.isoformat()
             daily_raw = _safe_dict(client.get_stats, day_text)
             readiness_raw = _safe_dict(getattr(client, "get_training_readiness", None), day_text)
@@ -243,6 +247,7 @@ def _write_outputs(
 
 
 def _manifest(days_to_fetch: list[date]) -> dict[str, Any]:
+    # Manifest paths are written in "latest/" form for compatibility with GCS mode.
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": "garmin-connect",
@@ -310,6 +315,8 @@ def sync_completeness(
     output: Path | None,
     activity_streams_enabled: bool,
 ) -> dict[str, Any]:
+    # Sync completeness is a contract for MCP clients: "success" alone is not
+    # enough for recovery advice unless the recovery datasets are current.
     datasets = {
         "daily": daily,
         "sleep": sleep,
@@ -342,11 +349,13 @@ def sync_completeness(
 
 
 def latest_date(rows: list[dict[str, Any]]) -> str | None:
+    # Rows are normalized with ISO date strings, so lexical sort is chronological.
     dates = sorted(str(row.get("date", ""))[:10] for row in rows if row.get("date"))
     return dates[-1] if dates else None
 
 
 def stale_dataset_warnings(latest_dates: dict[str, str | None]) -> list[str]:
+    # Sleep and HRV can lag Garmin daily data; warn when the lag is larger than expected.
     warnings: list[str] = []
     daily_date = latest_dates.get("daily")
     if not daily_date:
@@ -368,6 +377,7 @@ def date_lag_days(newer: str, older: str) -> int:
 
 
 def activity_stream_coverage(activities: list[dict[str, Any]], output: Path | None) -> dict[str, Any]:
+    # Latest sync stores streams for the same top activity window as details.
     if output is None:
         return {"activities_checked": len(activities), "activities_with_streams": 0, "completeness_percent": 0}
     checked = 0
@@ -387,6 +397,7 @@ def activity_stream_coverage(activities: list[dict[str, Any]], output: Path | No
 
 
 def _clear_json_files(directory: Path) -> None:
+    # Remove stale per-activity files so deleted/old activities do not appear current.
     if not directory.exists():
         return
     for path in directory.glob("*.json"):
@@ -394,6 +405,7 @@ def _clear_json_files(directory: Path) -> None:
 
 
 def _date_range(days: int) -> list[date]:
+    # Latest sync always includes today and walks backward by the requested window.
     if days < 1:
         raise ValueError("--days must be at least 1")
     today = date.today()
@@ -401,6 +413,7 @@ def _date_range(days: int) -> list[date]:
 
 
 def _safe_dict(func: Callable[..., Any] | None, *args: Any) -> dict[str, Any]:
+    # A single Garmin endpoint failure should not prevent other datasets from syncing.
     if func is None:
         return {}
     try:
@@ -411,6 +424,7 @@ def _safe_dict(func: Callable[..., Any] | None, *args: Any) -> dict[str, Any]:
 
 
 def _safe_list(func: Callable[..., Any] | None, *args: Any) -> list[Any]:
+    # List endpoint failure is represented as an empty list and surfaced via completeness.
     if func is None:
         return []
     try:
@@ -453,10 +467,12 @@ def main() -> None:
 
 
 def write_raw_latest(output: Path, dataset: str, payload: Any) -> None:
+    # Raw latest payloads are grouped by dataset so renormalize can replay them later.
     write_json(output / "raw" / dataset / f"{dataset}.json", payload)
 
 
 def bool_arg(value: str | bool) -> bool:
+    # Accept Docker/env-style booleans while still rejecting typos.
     if isinstance(value, bool):
         return value
     lowered = value.lower()

@@ -3,6 +3,7 @@ import pytest
 from sync import gcs_upload
 
 
+# GCS upload tests assert that only normalized JSON leaves the sync output dir.
 def test_json_upload_mappings_include_nested_activity_details(tmp_path):
     (tmp_path / "manifest.json").write_text("{}", encoding="utf-8")
     (tmp_path / "raw_garmin_payload.json").write_text("{}", encoding="utf-8")

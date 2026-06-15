@@ -3,6 +3,7 @@
 export type SportCategory = "cycling" | "running" | "walking" | "badminton" | "strength" | "mobility" | "other";
 
 export function classifySport(value: unknown): SportCategory {
+  // Normalize separators so Garmin type keys and display names match the same regexes.
   const text = String(value ?? "")
     .toLowerCase()
     .replace(/[_-]+/g, " ");

@@ -1,6 +1,7 @@
 from sync.garmin_sync.normalizers import normalize_activity, normalize_hrv, normalize_sleep
 
 
+# Normalizer tests encode the Garmin payload shapes seen in real raw files.
 def test_sleep_tolerates_missing_fields():
     sleep = normalize_sleep({}, "2026-06-13")
     assert sleep["date"] == "2026-06-13"

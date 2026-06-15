@@ -1,6 +1,7 @@
 from sync.coach_context import generate_coach_context
 
 
+# Coach context should stay compact while preserving recent training/recovery signals.
 def test_coach_context_is_compact_and_aggregates_activity_totals():
     context = generate_coach_context(
         daily=[{"date": "2026-06-13", "acute_load": 410, "training_readiness": 68}],

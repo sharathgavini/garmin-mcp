@@ -26,6 +26,7 @@ function textValue(value: unknown): string {
 }
 
 export function activityId(activity: JsonObject): string | null {
+  // Garmin IDs can arrive as string or number depending on endpoint.
   const id = activity.id ?? activity.activity_id ?? activity.activityId;
   return typeof id === "string" || typeof id === "number" ? String(id) : null;
 }
@@ -39,6 +40,7 @@ export function activityDate(activity: JsonObject): string {
 }
 
 export function withinDays(activity: JsonObject, days: number): boolean {
+  // Undated activities are kept so unusual Garmin records are still visible.
   const date = activityDate(activity).slice(0, 10);
   if (!date) {
     return true;
@@ -50,6 +52,7 @@ export function withinDays(activity: JsonObject, days: number): boolean {
 }
 
 export function matchesWorkout(activity: JsonObject, filter: WorkoutFilter): boolean {
+  // Match specific Garmin type strings first, then normalized sport categories.
   const type = activityType(activity).toLowerCase();
   const category = classifySport(type);
   const includes = (filter.activity_types ?? []).map((item) => item.toLowerCase());
@@ -127,6 +130,7 @@ export function summarizeWorkout(activity: JsonObject | null, stream: JsonObject
 }
 
 export function streamCompleteness(stream: JsonObject | null): JsonObject {
+  // Top-level completeness fields let agents decide whether stream analysis is safe.
   const availability = stream?.availability && typeof stream.availability === "object" ? (stream.availability as JsonObject) : {};
   const fields = Array.isArray(availability.available_fields)
     ? availability.available_fields.map(String)
@@ -150,6 +154,7 @@ export function streamCompleteness(stream: JsonObject | null): JsonObject {
 
 // Field filtering preserves timestamp/offset so callers can still align samples.
 export function selectStreamFields(stream: JsonObject, fields?: string[]): JsonObject {
+  // Always keep time alignment fields even when the caller requests specific metrics.
   if (!fields || fields.length === 0) {
     return stream;
   }
@@ -184,6 +189,7 @@ export function shapeStream(stream: JsonObject, options: { fields?: string[]; do
 
 // Analysis output is structured for an AI client to interpret, not as final medical/training advice.
 export function analyze(activity: JsonObject | null, stream: JsonObject | null, includeStreams: boolean): JsonObject {
+  // Analysis stays deterministic and data-shaped; final coaching language belongs to the AI client.
   const summary = summarizeWorkout(activity, stream);
   const samples = Array.isArray(stream?.samples) ? (stream.samples as JsonObject[]) : [];
   const heartRates = samples.map((sample) => numberValue(sample.heart_rate)).filter((value): value is number => value !== null);
@@ -223,6 +229,7 @@ export function analyze(activity: JsonObject | null, stream: JsonObject | null, 
 }
 
 export async function allActivities(reader: GarminDataReader): Promise<JsonObject[]> {
+  // Merge archive and latest by ID so recent syncs can update archived summaries.
   const latest = await reader.readCollection("activities").catch(() => [] as JsonObject[]);
   const archive = reader.readArchiveActivities ? await reader.readArchiveActivities() : [];
   const byId = new Map<string, JsonObject>();
@@ -249,6 +256,7 @@ function consistency(values: number[]): JsonObject | null {
 }
 
 function heartRateDistribution(values: number[]): JsonObject {
+  // Simple HR buckets provide a rough intensity picture without requiring user zones.
   return {
     low: values.filter((value) => value < 120).length,
     aerobic: values.filter((value) => value >= 120 && value < 150).length,

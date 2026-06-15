@@ -23,6 +23,7 @@ export interface SyncNowOptions {
 }
 
 export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {}): Promise<JsonObject> {
+  // sync_now is asynchronous: the MCP call starts work, then clients poll status.
   const dataDir = options.dataDir ?? process.env.GARMIN_DATA_DIR ?? "/app/data/latest";
   const lockPath = path.join(dataDir, "sync.lock");
   const statusPath = path.join(dataDir, "latest_sync_status.json");
@@ -70,6 +71,7 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
   }
 
   const spawnProcess = options.spawnProcess ?? spawn;
+  // Run from the repo/app root so "python -m sync.main" can import the sync package.
   const child = spawnProcess("python", args, {
     cwd: path.resolve(dataDir, "..", ".."),
     env: process.env,
@@ -105,6 +107,7 @@ export async function syncNow(input: SyncNowInput, options: SyncNowOptions = {})
 }
 
 export async function runningSyncState(dataDir: string): Promise<JsonObject | null> {
+  // A lock file is the source of truth for "currently running" even if status is stale.
   const lock = await readJson(path.join(dataDir, "sync.lock"));
   if (!lock?.started_at) {
     return null;

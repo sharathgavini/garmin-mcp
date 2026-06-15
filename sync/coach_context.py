@@ -54,6 +54,7 @@ def generate_coach_context(
 
 
 def _trend(rows: list[dict[str, Any]], keys: list[str]) -> list[dict[str, Any]]:
+    # Trends are intentionally key-selected so prompt context stays compact.
     return [_compact({key: row.get(key) for key in keys}) for row in rows]
 
 
@@ -63,6 +64,7 @@ def _recovery_indicators(
     hrv: list[dict[str, Any]],
     body_battery: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    # Latest values are enough here; deeper recovery analysis uses dedicated MCP tools.
     latest_daily = daily[-1] if daily else {}
     latest_sleep = sleep[-1] if sleep else {}
     latest_hrv = hrv[-1] if hrv else {}
@@ -82,6 +84,7 @@ def _recovery_indicators(
 
 
 def _training_indicators(daily: list[dict[str, Any]], activities: list[dict[str, Any]]) -> dict[str, Any]:
+    # Training indicators give the agent a quick load snapshot without streams.
     latest_daily = daily[-1] if daily else {}
     training_effects = [item["training_effect"] for item in activities if isinstance(item.get("training_effect"), (int, float))]
     return _compact(
@@ -95,6 +98,7 @@ def _training_indicators(daily: list[dict[str, Any]], activities: list[dict[str,
 
 
 def _first_date(collections: list[list[dict[str, Any]]]) -> str | None:
+    # ISO date strings sort chronologically.
     dates = sorted(str(item["date"]) for rows in collections for item in rows if item.get("date"))
     return dates[0] if dates else None
 
@@ -105,6 +109,7 @@ def _last_date(collections: list[list[dict[str, Any]]]) -> str | None:
 
 
 def _in_range(value: Any, start: str | None, end: str | None) -> bool:
+    # Activity dates are normalized as YYYY-MM-DD strings.
     if not value or not start or not end:
         return False
     text = str(value)
@@ -118,4 +123,5 @@ def _sum_number(rows: list[dict[str, Any]], key: str) -> int | float:
 
 
 def _compact(value: dict[str, Any]) -> dict[str, Any]:
+    # Drop empty values so coach context remains small and readable.
     return {key: item for key, item in value.items() if item not in (None, "", [], {})}

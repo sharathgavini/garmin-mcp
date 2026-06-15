@@ -17,6 +17,7 @@ const collectionFiles: Record<string, string> = {
 };
 
 export class LocalDataReader implements GarminDataReader {
+  // baseDir normally points at /app/data/latest; archive is resolved as a sibling.
   constructor(private readonly baseDir: string) {}
 
   async readManifest(): Promise<Manifest> {
@@ -107,6 +108,7 @@ export class LocalDataReader implements GarminDataReader {
   }
 
   async readActivityStream(activityId: string, source: "latest" | "archive" | "auto" = "auto"): Promise<JsonObject | null> {
+    // Auto mode checks latest first so recent syncs override older archive files.
     const candidates =
       source === "latest"
         ? [path.join(this.baseDir, "activity_streams", `${activityId}.json`)]
@@ -131,6 +133,7 @@ export class LocalDataReader implements GarminDataReader {
   }
 
   async readArchiveActivities(): Promise<JsonObject[]> {
+    // Capability and period tools need the full archive activity index.
     const archive = this.archiveDir();
     const rows: JsonObject[] = [];
     try {
@@ -172,6 +175,7 @@ export class LocalDataReader implements GarminDataReader {
 }
 
 export class GcsDataReader implements GarminDataReader {
+  // GCS mode is latest-focused for Cloud Run; historical archive remains local.
   private readonly storage = new Storage();
 
   constructor(
@@ -261,6 +265,7 @@ function monthPartitions(startDate: string, endDate: string): Array<{ year: stri
 }
 
 function filterRowsByDate(rows: JsonObject[], startDate: string, endDate: string): JsonObject[] {
+  // Archive rows may use activity start fields instead of a normalized date field.
   return rows.filter((row) => {
     const date = rowDate(row);
     return date !== null && date >= startDate && date <= endDate;
@@ -273,6 +278,7 @@ function rowDate(row: JsonObject): string | null {
 }
 
 function eachDate(startDate: string, endDate: string): string[] {
+  // Used for coverage warnings so clients can see missing days, not just missing files.
   const dates: string[] = [];
   const current = new Date(`${startDate}T00:00:00Z`);
   const end = new Date(`${endDate}T00:00:00Z`);
@@ -284,6 +290,7 @@ function eachDate(startDate: string, endDate: string): string[] {
 }
 
 export function createDataReader(): GarminDataReader {
+  // Explicit local mode wins even if GCS_BUCKET is present in the environment.
   const mode = process.env.GARMIN_DATA_MODE;
   const bucket = process.env.GCS_BUCKET;
   if (bucket && mode !== "local") {

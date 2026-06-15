@@ -38,6 +38,7 @@ RAW_FILE_NAMES = {
 
 
 def inspect_activity(activity_id: str, output: Path, *, session_file: Path = DEFAULT_SESSION_FILE, client: Any | None = None) -> Path:
+    # Inspector output is deliberately verbose; it is for debugging Garmin payloads.
     garmin = client or login_or_restore(session_file=session_file)
     debug_dir = output / f"activity_{activity_id}"
     debug_dir.mkdir(parents=True, exist_ok=True)
@@ -50,6 +51,7 @@ def inspect_activity(activity_id: str, output: Path, *, session_file: Path = DEF
     )
 
     payloads = fetch_activity_payloads(garmin, activity_id)
+    # Persist every wrapped endpoint response so a future normalizer can be built from it.
     for key, wrapped in payloads.items():
         write_json(debug_dir / RAW_FILE_NAMES.get(key, f"raw_{key}.json"), wrapped)
 
@@ -84,12 +86,14 @@ def inspect_activity(activity_id: str, output: Path, *, session_file: Path = DEF
 
 
 def endpoint_payload(value: Any) -> Any:
+    # Match sync.activity_streams.endpoint_payload without importing a private helper.
     if isinstance(value, dict) and "payload" in value and ("method" in value or "available" in value):
         return value.get("payload")
     return value
 
 
 def nested_key_inventory(value: Any, path: str = "$") -> list[dict[str, Any]]:
+    # Limit list traversal to the first ten items to avoid giant debug text files.
     rows: list[dict[str, Any]] = []
     if isinstance(value, dict):
         rows.append({"path": path, "type": "dict", "keys": sorted(str(key) for key in value.keys())})
@@ -105,6 +109,7 @@ def nested_key_inventory(value: Any, path: str = "$") -> list[dict[str, Any]]:
 
 
 def format_key_inventory(rows: list[dict[str, Any]]) -> str:
+    # Text format is easier to skim than JSON when exploring unknown payloads.
     lines = []
     for row in rows:
         line = f"{row['path']} ({row['type']})"

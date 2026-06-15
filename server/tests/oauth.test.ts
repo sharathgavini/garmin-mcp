@@ -11,6 +11,7 @@ import { LocalDataReader } from "../src/data.js";
 const sampleDir = path.resolve(process.cwd(), "../sample-data");
 
 async function testApp() {
+  // Each OAuth test gets isolated JSON state under a temporary secrets directory.
   const secretsDir = await mkdtemp(path.join(os.tmpdir(), "garmin-oauth-"));
   const oauth = new OAuthService(new OAuthStore(secretsDir), "https://garmin.sharathgavini.com", 2592000);
   const app = createApp({

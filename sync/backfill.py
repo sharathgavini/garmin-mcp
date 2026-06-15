@@ -193,6 +193,8 @@ def fetch_chunk(client: Any, start: date, end: date, *, include_raw: bool = Fals
 
 
 def fetch_activities(client: Any, start: date, end: date) -> list[Any]:
+    # Prefer Garmin's date-range endpoint when present; older clients only expose
+    # a recent activity page, which we filter locally.
     by_date = getattr(client, "get_activities_by_date", None)
     if by_date is not None:
         value = safe_list(by_date, start.isoformat(), end.isoformat())
@@ -253,6 +255,7 @@ def write_activity_streams(output: Path, client: Any, activities: list[dict[str,
 
 
 def generate_archive_manifest(output: Path, start: date, end: date) -> dict[str, Any]:
+    # The archive manifest summarizes partitioned files without loading raw payloads.
     dataset_counts = {
         name: count_partition_rows(output / name, f"{name}.json")
         for name in ["daily", "sleep", "hrv", "stress", "body_battery", "activities"]
@@ -268,10 +271,12 @@ def generate_archive_manifest(output: Path, start: date, end: date) -> dict[str,
 
 
 def raw_output_dir(output: Path) -> Path:
+    # Raw archive payloads are optional and live under a parallel tree.
     return output / "raw"
 
 
 def count_partition_rows(root: Path, filename: str) -> int:
+    # Count normalized rows across all year/month partitions for manifest stats.
     total = 0
     for path in root.glob(f"year=*/month=*/{filename}"):
         total += len(read_json_list(path))
@@ -279,6 +284,7 @@ def count_partition_rows(root: Path, filename: str) -> int:
 
 
 def chunk_ranges(start: date, end: date, chunk_days: int) -> list[tuple[date, date]]:
+    # Inclusive chunk ranges make checkpoint dates easy to reason about.
     ranges = []
     current = start
     while current <= end:
@@ -289,6 +295,7 @@ def chunk_ranges(start: date, end: date, chunk_days: int) -> list[tuple[date, da
 
 
 def resume_date(start: date, checkpoint: dict[str, Any] | None) -> date:
+    # Resume after the last completed date, but never before the requested start.
     if not checkpoint or not checkpoint.get("completed_until"):
         return start
     completed_until = parse_iso_date(str(checkpoint["completed_until"]))
@@ -296,6 +303,7 @@ def resume_date(start: date, checkpoint: dict[str, Any] | None) -> date:
 
 
 def load_checkpoint(path: Path) -> dict[str, Any] | None:
+    # Corrupt checkpoints are ignored so a user can rerun with --force or restart.
     if not path.exists():
         return None
     try:
@@ -316,6 +324,7 @@ def write_checkpoint(
     completed_until: date,
     last_error: str | None,
 ) -> None:
+    # Checkpoints are intentionally small and human-readable for TrueNAS recovery.
     write_json(
         path,
         {
@@ -331,6 +340,7 @@ def write_checkpoint(
 
 
 def merge_rows_by_key(existing: list[dict[str, Any]], new_rows: list[dict[str, Any]], *, key: str) -> list[dict[str, Any]]:
+    # Re-running a chunk replaces rows for the same date/activity instead of duplicating them.
     merged = {str(row.get(key)): row for row in existing if row.get(key) is not None}
     for row in new_rows:
         if row.get(key) is not None:
@@ -339,6 +349,7 @@ def merge_rows_by_key(existing: list[dict[str, Any]], new_rows: list[dict[str, A
 
 
 def read_json_list(path: Path) -> list[dict[str, Any]]:
+    # Missing or invalid partition files behave like empty partitions.
     if not path.exists():
         return []
     try:
@@ -351,6 +362,7 @@ def read_json_list(path: Path) -> list[dict[str, Any]]:
 
 
 def each_day(start: date, end: date) -> Iterable[date]:
+    # Generator form avoids building large date lists for multi-year backfills.
     current = start
     while current <= end:
         yield current
@@ -364,6 +376,7 @@ def parse_iso_date(value: str | date) -> date:
 
 
 def safe_dict(func: Callable[..., Any] | None, *args: Any) -> dict[str, Any]:
+    # Garmin endpoints occasionally fail per day; missing data is recorded as an empty row.
     if func is None:
         return {}
     try:
@@ -374,6 +387,7 @@ def safe_dict(func: Callable[..., Any] | None, *args: Any) -> dict[str, Any]:
 
 
 def safe_list(func: Callable[..., Any] | None, *args: Any) -> list[Any]:
+    # List endpoints use the same tolerant failure behavior as dict endpoints.
     if func is None:
         return []
     try:
@@ -384,6 +398,7 @@ def safe_list(func: Callable[..., Any] | None, *args: Any) -> list[Any]:
 
 
 def bool_arg(value: str) -> bool:
+    # argparse booleans are explicit so Docker env strings behave predictably.
     lowered = value.lower()
     if lowered in {"1", "true", "yes", "on"}:
         return True

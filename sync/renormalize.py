@@ -19,6 +19,7 @@ DATASET_NORMALIZERS: dict[str, Normalizer] = {
 
 
 def renormalize(input_dir: Path, output_dir: Path, datasets: list[str]) -> dict[str, int]:
+    # Return counts so CLI users and tests can verify what was rebuilt.
     counts: dict[str, int] = {}
     for dataset in datasets:
         if dataset not in DATASET_NORMALIZERS:
@@ -28,6 +29,7 @@ def renormalize(input_dir: Path, output_dir: Path, datasets: list[str]) -> dict[
 
 
 def renormalize_dataset(input_dir: Path, output_dir: Path, dataset: str, normalizer: Normalizer) -> int:
+    # Archive raw files are partitioned; latest raw files are top-level per dataset.
     partition_files = sorted((input_dir / dataset).glob(f"year=*/month=*/{dataset}.json"))
     if partition_files:
         total = 0
@@ -45,6 +47,7 @@ def renormalize_dataset(input_dir: Path, output_dir: Path, dataset: str, normali
 
 
 def normalize_raw_file(raw_file: Path, normalizer: Normalizer) -> list[dict[str, Any]]:
+    # Raw files may hold either a list of wrapped rows or a single raw payload.
     if not raw_file.exists():
         return []
     raw_rows = json.loads(raw_file.read_text(encoding="utf-8"))
@@ -58,6 +61,7 @@ def normalize_raw_file(raw_file: Path, normalizer: Normalizer) -> list[dict[str,
 
 
 def unwrap_raw_row(row: Any, *, fallback_date: str) -> tuple[str, dict[str, Any]]:
+    # Sync/backfill raw rows use {"date", "payload"} wrappers; direct payloads are also accepted.
     if isinstance(row, dict) and "payload" in row:
         payload = row.get("payload")
         date = str(row.get("date") or infer_date(payload) or fallback_date)
@@ -68,6 +72,7 @@ def unwrap_raw_row(row: Any, *, fallback_date: str) -> tuple[str, dict[str, Any]
 
 
 def infer_date(payload: Any) -> str | None:
+    # Sleep payloads can infer dates from their local/GMT sleep timestamps.
     if not isinstance(payload, dict):
         return None
     daily_sleep = payload.get("dailySleepDTO") if isinstance(payload.get("dailySleepDTO"), dict) else {}
@@ -80,6 +85,7 @@ def infer_date(payload: Any) -> str | None:
 
 
 def parse_datasets(value: str) -> list[str]:
+    # Keep CLI parsing simple while allowing comma-separated dataset names.
     return [item.strip() for item in value.split(",") if item.strip()]
 
 

@@ -19,6 +19,7 @@ def pick(source: dict[str, Any], *keys: str) -> Any:
 
 
 def pick_path(source: dict[str, Any], *paths: tuple[str, ...]) -> Any:
+    # Nested Garmin objects often hold the same metric under different paths.
     for path in paths:
         current: Any = source
         for key in path:
@@ -32,6 +33,7 @@ def pick_path(source: dict[str, Any], *paths: tuple[str, ...]) -> Any:
 
 
 def pick_any(sources: list[dict[str, Any]], *keys: str) -> Any:
+    # Search top-level and nested Garmin DTOs in priority order.
     for source in sources:
         if isinstance(source, dict):
             value = pick(source, *keys)
@@ -41,6 +43,7 @@ def pick_any(sources: list[dict[str, Any]], *keys: str) -> Any:
 
 
 def normalize_daily(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
+    # Daily summary combines Garmin stats with optional training readiness.
     readiness = pick(raw, "trainingReadiness")
     if not isinstance(readiness, dict):
         readiness = {}
@@ -62,6 +65,8 @@ def normalize_daily(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
 
 
 def normalize_sleep(raw: dict[str, Any], day: date | str, raw_payload_path: str | None = None) -> dict[str, Any]:
+    # Sleep payloads may be top-level or nested under dailySleepDTO; keep both
+    # paths active so raw payload reprocessing can recover richer fields.
     daily_sleep = raw.get("dailySleepDTO") if isinstance(raw.get("dailySleepDTO"), dict) else {}
     sleep_score_payload = pick_any([raw, daily_sleep], "sleepScore")
     if not isinstance(sleep_score_payload, dict):
@@ -132,6 +137,7 @@ def normalize_sleep(raw: dict[str, Any], day: date | str, raw_payload_path: str 
         "body_battery_change",
     ]
     missing = [field for field in required if row.get(field) is None]
+    # data_available means "we extracted any meaningful sleep metric", not full completeness.
     row["data_available"] = any(row.get(field) is not None for field in required)
     row["missing_fields"] = missing
     row["extraction_notes"] = ["dailySleepDTO found"] if daily_sleep else ["dailySleepDTO missing; normalized from top-level payload only"]
@@ -146,6 +152,8 @@ def normalize_sleep(raw: dict[str, Any], day: date | str, raw_payload_path: str 
 
 
 def normalize_hrv(raw: dict[str, Any], day: date | str, raw_payload_path: str | None = None) -> dict[str, Any]:
+    # HRV summaries and 5-minute readings are both useful: summaries for quick
+    # recovery state, readings for deeper overnight analysis.
     summary = raw.get("hrvSummary") if isinstance(raw.get("hrvSummary"), dict) else {}
     readings_raw = pick(raw, "hrvReadings", "readings") or []
     readings = [_normalize_hrv_reading(item) for item in readings_raw if isinstance(item, dict)]
@@ -175,6 +183,7 @@ def normalize_hrv(raw: dict[str, Any], day: date | str, raw_payload_path: str | 
 
 
 def normalize_stress(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
+    # Stress is intentionally compact; raw payloads remain available for future fields.
     return compact(
         {
             "date": str(day),
@@ -186,6 +195,7 @@ def normalize_stress(raw: dict[str, Any], day: date | str) -> dict[str, Any]:
 
 
 def normalize_body_battery(raw: dict[str, Any] | list[Any], day: date | str) -> dict[str, Any]:
+    # Garmin body battery commonly arrives as an array of timestamp/value pairs.
     if isinstance(raw, list):
         values = []
         for item in raw:
@@ -208,6 +218,7 @@ def normalize_body_battery(raw: dict[str, Any] | list[Any], day: date | str) -> 
 
 
 def normalize_activity(raw: dict[str, Any]) -> dict[str, Any]:
+    # Activity summaries are the index used by range tools; details/streams stay separate.
     summary = raw.get("summaryDTO") if isinstance(raw.get("summaryDTO"), dict) else {}
     activity_type = pick(raw, "activityType", "activityTypeDTO", "activity_type", "type")
     if isinstance(activity_type, dict):
@@ -229,6 +240,7 @@ def normalize_activity(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_activity_detail(raw: dict[str, Any], fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+    # Detail normalization enriches the summary while keeping streams in their own file.
     fallback = fallback or {}
     summary = normalize_activity(raw) if raw else {}
     raw_summary = raw.get("summaryDTO") if isinstance(raw.get("summaryDTO"), dict) else raw
@@ -283,6 +295,7 @@ def normalize_activity_detail(raw: dict[str, Any], fallback: dict[str, Any] | No
 
 
 def _normalize_lap(raw: dict[str, Any], lap_number: int) -> dict[str, Any]:
+    # Laps and splits share the same compact shape for downstream analysis.
     return compact(
         {
             "lap": pick(raw, "lapNumber", "lap") or lap_number,
@@ -294,6 +307,7 @@ def _normalize_lap(raw: dict[str, Any], lap_number: int) -> dict[str, Any]:
 
 
 def _normalize_hrv_reading(raw: dict[str, Any]) -> dict[str, Any]:
+    # Preserve both GMT and local times so clients can align readings with sleep windows.
     return compact(
         {
             "hrv_value": pick(raw, "hrvValue", "hrv_value", "value"),

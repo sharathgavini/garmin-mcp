@@ -41,6 +41,8 @@ const CODES_FILE = "oauth-codes.json";
 const TOKENS_FILE = "oauth-tokens.json";
 
 export class OAuthStore {
+  // JSON files are enough for a single-user self-hosted deployment and keep
+  // OAuth state portable across Docker restarts.
   constructor(private readonly secretsDir = process.env.OAUTH_SECRETS_DIR ?? "/app/secrets") {}
 
   async readClients(): Promise<OAuthClient[]> {
@@ -68,6 +70,7 @@ export class OAuthStore {
   }
 
   private async readArray<T>(file: string): Promise<T[]> {
+    // Missing OAuth state files mean no clients/codes/tokens have been issued yet.
     try {
       const raw = await fs.readFile(path.join(this.secretsDir, file), "utf8");
       const parsed = JSON.parse(raw);
@@ -78,6 +81,7 @@ export class OAuthStore {
   }
 
   private async writeJson(file: string, value: unknown): Promise<void> {
+    // Write via temp+rename so interrupted writes do not corrupt OAuth state.
     await fs.mkdir(this.secretsDir, { recursive: true, mode: 0o700 });
     const target = path.join(this.secretsDir, file);
     const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
@@ -99,6 +103,7 @@ export class OAuthService {
   ) {}
 
   metadata(): JsonRecord {
+    // Remote MCP clients discover these endpoints before registering a connector.
     return {
       issuer: this.issuer,
       authorization_endpoint: `${this.issuer}/oauth/authorize`,
@@ -121,6 +126,7 @@ export class OAuthService {
   }
 
   async registerClient(input: JsonRecord): Promise<OAuthClient> {
+    // Dynamic registration accepts public PKCE clients and optional client_secret_post clients.
     const redirectUris = Array.isArray(input.redirect_uris) ? input.redirect_uris.filter(isString) : [];
     if (redirectUris.length === 0) {
       throw oauthError(400, "invalid_client_metadata");
@@ -167,6 +173,7 @@ export class OAuthService {
     redirectUri: string;
     codeChallenge: string;
   }): Promise<string> {
+    // Authorization codes are short-lived and single-use.
     const code = randomToken(32);
     const codes = await this.store.readCodes();
     codes.push({
@@ -187,6 +194,7 @@ export class OAuthService {
     redirectUri: string;
     codeVerifier: string;
   }): Promise<{ access_token: string; token_type: "Bearer"; expires_in: number; scope: "mcp" }> {
+    // PKCE verification binds the token exchange to the original authorization request.
     const codes = await this.store.readCodes();
     const codeRecord = codes.find((candidate) => candidate.code === input.code);
     if (!codeRecord || codeRecord.used || new Date(codeRecord.expires_at).getTime() <= Date.now()) {
@@ -226,6 +234,7 @@ export class OAuthService {
 }
 
 export function installOAuthRoutes(app: express.Express, oauth: OAuthService): void {
+  // These routes are separate from /mcp so the MCP transport can stay bearer-only.
   app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     res.json(oauth.metadata());
   });

@@ -2,6 +2,7 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function isIsoDate(value: string): boolean {
+  // Keep schemas strict: callers must use date-only YYYY-MM-DD values.
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 }
 
@@ -16,6 +17,7 @@ export function daysAgoIso(days: number, from = new Date()): string {
 }
 
 export function inclusiveDays(startDate: string, endDate: string): number {
+  // Ranges are inclusive because Garmin daily datasets are day-indexed.
   const start = Date.parse(`${startDate}T00:00:00Z`);
   const end = Date.parse(`${endDate}T00:00:00Z`);
   return Math.floor((end - start) / DAY_MS) + 1;
@@ -35,6 +37,7 @@ export function filterByDateRange<T extends { date?: unknown }>(
 }
 
 export function latestByDate<T extends { date?: unknown }>(rows: T[]): T | undefined {
+  // Copy before sorting so callers do not see their arrays mutated.
   return [...rows]
     .filter((row) => typeof row.date === "string")
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
